@@ -1,7 +1,3 @@
-# unlike the rest of the data pipeline, this is intended to run in Python 3.6+, 
-# as it is meant to be run locally on a GUI-enabled laptop or such and not the 
-# linux machine in the warm room.
-
 import pandas as pd
 import numpy as np
 import csv
@@ -12,7 +8,14 @@ import matplotlib.pyplot as plt
 import matplotlib
 import sys
 import os
+from scipy.stats import describe
 import random
+
+import sys
+
+vers = '%s.%s' % (sys.version_info[0],sys.version_info[1])
+if not vers=='2.7':
+    raise Exception("Must be using Python 2.7")
 
 
 print("\033c")
@@ -36,7 +39,7 @@ def printright(printout,clear=False,delay=False):
         header()
     print(' '*(termsize-len(printout)-8)+printout)
     if delay==True:
-        sleep(1)
+        sleep(0.3)
 
 def options(head,items):
     print('')
@@ -44,7 +47,7 @@ def options(head,items):
     print(('-'*(termsize-16)).center(termsize))
     for j in items:
         print('\t'+j)
-    choice = input('\tChoice: ')
+    choice = raw_input('\tChoice: ')
     return choice
 
 def print_slow(t,indent=1,speed=100):
@@ -112,24 +115,25 @@ while True:
         dtype = [('id', 'U10'), ('count', int)]
         a = np.array(a, dtype=dtype)
         choices = np.sort(a, order='count')
-        choices = np.flip(choices,axis=0)        
+        choices = np.array(list(reversed(choices)))   
         linelength = 0
         print('')
         print('\t(sorted by amount of data)')
-        print('\t',end='')
+        sys.stdout.write('\t')
         for m in range(len(choices)-1):
             spaces = ' '*(5-len(str(m+1)))
             printstatement = '%s: %s%s' % (m+1, str(choices[m][0]),spaces)
             if linelength>(termsize-55):
                 linelength = 0
-                print(printstatement,end='\n\t')
+                print(printstatement)
+                sys.stdout.write('\t')
                 linelength += len(printstatement)
             else:
-                print(printstatement,end='')
+                sys.stdout.write(printstatement)
                 linelength += len(printstatement)
 
 
-        choice=int(input("\n\n\tSelection (number): "))
+        choice=int(raw_input("\n\n\tSelection (number): "))
         choice = str(choices[choice-1][0])
         printright('Choice Registered: Test Star '+choice,clear=True)
         indices = np.nonzero(sources['id']==choice)[0]
@@ -137,7 +141,7 @@ while True:
 
     if choice=='2':
         printright('Choice Registered: Coordinate Lookup',clear=True)
-        coords = input("\tRA and DEC coordinates in decimal decrees (format 'RA,DEC'): ")
+        coords = raw_input("\tRA and DEC coordinates in decimal decrees (format 'RA,DEC'): ")
         coords = coords.split(',')
         RA = float(coords[0])
         DEC = float(coords[1])
@@ -151,13 +155,13 @@ while True:
         printright('%s data points found' % len(indices),delay=True)
 
     if choice=='1':
-        choice = input('\tUCAC4 ID: ')
+        choice = raw_input('\tUCAC4 ID: ')
         printright('Choice Registered: UCAC4 ID Star '+choice,clear=True)
 
         indices = np.nonzero(sources['id']==choice)[0]
         printright('%s data points found' % len(indices),delay=True)
 
-    filt = options('Optical Filter Choice: ',
+    filt = options('Optical Filter Choice (selecting all filter data does not yield as much information as viewing a single filter at a time): ',
                 ['[R] R band (red) fitler',
                 '[V] V band (visual) filter',
                 '[B] B band (blue) filter',
@@ -186,8 +190,8 @@ while True:
             print('\t'+bold('Date/Time Entry: '))
             print(('-'*(termsize-16)).center(termsize))
             print('\tEnter dates as YYYY/MM/DD/HH/mm in GMT/24hr')
-            start = input("\tStart time: ")
-            end = input("\tEnd time: ")
+            start = raw_input("\tStart time: ")
+            end = raw_input("\tEnd time: ")
             printright('Choice Registered: from %s to %s' % (start,end),clear=True)
             start = datetime.strptime(start,'%Y/%m/%d/%H/%M')
             end = datetime.strptime(end,'%Y/%m/%d/%H/%M')
@@ -209,16 +213,16 @@ while True:
             time = [time[x] for x in range(len(time)) if isinstance(mags[x], float)]
         except IndexError:
             print('\tNo %s magnitude data found' % filt)
-            sleep(1.5)
+            sleep(0.5)
             print('\tReturning to Star Lookup')
             sleep(2.5)
             print("\033c")
-            sleep(0.6)
+            sleep(0.5)
             header()
-            sleep(0.6)
+            sleep(0.5)
             continue
 
-        saveflag = input("\tSave plot as file? [y/n]: ")
+        saveflag = raw_input("\tSave plot as file? (will also save summary statistics to .txt file [y/n]: ")
 
 
         plt.figure(figsize=(10,8))
@@ -236,22 +240,41 @@ while True:
         plt.ticklabel_format(useOffset=False,axis='y')
         
         plt.xlim(start,end)
+        mean, std = np.mean(mags), np.std(mags)
+        plt.ylim(mean-25*std,mean+25*std)
         plt.xlabel('Time')
         plt.ylabel('Magnitude')
         plt.xticks(rotation=50)
         plt.margins(0.2)
         plt.subplots_adjust(bottom=0.15)
 
+       
+
         if choice=='C':
             plt.title('Star at %s, %s' % (RA,DEC))
             if saveflag=='y':
-                filename = 'star_%s_%s.png' % (RA,DEC)
+                filename = 'star_%s_%s_%s.png' % (RA,DEC,filt)
         else: 
             plt.title('UCAC4 %s' % choice)
             if saveflag=='y':
-                filename = 'star_%s' % choice
+                filename = 'star_%s_%s.png' % (choice,filt)
         if saveflag=='y':
             plt.savefig('plots/'+filename)
+            with open('plots/'+filename.replace('.png','.txt'),'w') as t:
+                t.write('mean: '+str(np.mean(mags))+'\n')
+                t.write('std: '+str(np.std(mags))+'\n')
+                t.write('N: '+str(len(mags))+'\n')
+                q75, q25 = np.percentile(mags, [75 ,25])
+                iqr = q75 - q25
+                t.write('min: '+str(np.min(mags))+'\n')
+                t.write('1st quartile: '+str(q25)+'\n')
+                t.write('median: '+str(np.median(mags))+'\n')
+                t.write('3rd quartile: '+str(q75)+'\n')
+                t.write('max: '+str(np.max(mags))+'\n')
+                t.write('IQR: '+ str(iqr)+'\n')
+                t.write('Start Date/Time: '+str(start)+' UTC\n')
+                t.write('End Date/Time: '+str(end)+' UTC')
+
         plt.show()
 
 
@@ -271,8 +294,8 @@ while True:
             print('\t'+bold('Date/Time Entry: '))
             print(('-'*(termsize-16)).center(termsize))
             print('\tEnter dates as YYYY/MM/DD/HH/mm in GMT/24hr')
-            start = input("\tStart time: ")
-            end = input("\tEnd time: ")
+            start = raw_input("\tStart time: ")
+            end = raw_input("\tEnd time: ")
             printright('Choice Registered: from %s to %s' % (start,end),clear=True)
             start = datetime.strptime(start,'%Y/%m/%d/%H/%M')
             end = datetime.strptime(end,'%Y/%m/%d/%H/%M')
@@ -297,7 +320,7 @@ while True:
             mags[j] = [mags[j][x] for x in range(len(mags[j])) if isinstance(mags[j][x], float)]
         
 
-        saveflag = input("\tSave plot as file? [y/n]: ")
+        saveflag = raw_input("\tSave plot as file? [y/n]: ")
         plt.figure(figsize=(10,8))
         plt.scatter(time[0], mags[0], c='r', marker='.', label='R mag')
         plt.scatter(time[1], mags[1], c='g', marker='.', label='V mag')
@@ -310,11 +333,15 @@ while True:
         plt.ticklabel_format(useOffset=False,axis='y')
         
         plt.xlim(start,end)
+
+        mean, std = np.mean(mags[1]), np.std(mags[1])
+        plt.ylim(mean-25*std,mean+25*std)
         plt.xlabel('Time')
         plt.ylabel('Magnitude')
         plt.xticks(rotation=50)
         plt.margins(0.2)
         plt.subplots_adjust(bottom=0.15)
+
 
         if choice=='C':
             plt.title('Star at %s, %s' % (RA,DEC))
@@ -341,7 +368,7 @@ while True:
         sys.exit()
 
     if loopflag=='1':
-        sleep(0.6)
+        sleep(0.2)
         header()
-        sleep(0.6)
+        sleep(0.2)
         continue
