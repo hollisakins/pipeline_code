@@ -1,21 +1,23 @@
-from astropy.io import fits # fits module for opening and writing to fits files
-from astropy import wcs # world coordinate system module for converting to RA/Dec
-from astroquery.vizier import Vizier # for looking up stars in catalogs listed in Vizier
-import astropy.coordinates as coord # for inputting coordinates into Vizier
-import astropy.units as u # for units
+# standard packages
 import numpy as np 
 import math 
-from datetime import datetime
-from time import strftime, gmtime, strptime, sleep
-import os 
-import warnings 
-import sep 
-import csv
-import sys
-import shutil
-from collections import OrderedDict
-from photutils import CircularAperture, CircularAnnulus, aperture_photometry, Background2D, MedianBackground
-from astropy.stats import SigmaClip
+import os # for interacting with the terminal 
+import warnings # for suppressing warnings
+import csv # for reading/writing from csv files
+import sys # for interacting with the computer, shutting down the program, etc
+import shutil # solely for copying .SRC files between directories 
+from datetime import datetime 
+from time import strftime, gmtime, strptime, sleep 
+from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
+
+# astro packages
+from astropy.io import fits # fits module for opening and writing to fits files
+from astropy import wcs # world coordinate system module for converting .SRC file data to RA/Dec
+from astroquery.vizier import Vizier # for looking up stars in catalogs listed in Vizier
+import astropy.coordinates as coord # for inputting coordinates into Vizier
+import astropy.units as u # for units for the coord module
+import sep # source extraction package based on the SExtractor application
+
 
 # defines the width of the console to print output more clearly 
 rows, columns = os.popen('stty size', 'r').read().split()
@@ -27,7 +29,7 @@ termsize = int(columns)
 warnings.catch_warnings() 
 warnings.simplefilter('ignore')
 
-slow = False # if slow=True it will pause between printing each line just to make it easier to read
+slow = False # if slow=True it will pause between printing each line just to make it easier to read, good for testing since it can go really fast
 
 # function for printing the output consistently 
 def prnt(indent,strng,filename=False):
@@ -336,11 +338,12 @@ class Field:
         objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
         X_pos = src[:,0]
         Y_pos = src[:,1]
-        A = src[:,8]
+        A = src[:,8] # these last three are solely for plotting purposes
         B = src[:,9]
         theta = src[:,10]
         prnt(self.filename,'Gathered source data')
         return {'obj':objects,'X':X_pos,'Y':Y_pos,'A':A,'B':B,'theta':theta} # return source data as dict
+
 
     def Convert(self): # converts obj list in pixel coordinate to RA-dec coordinates
         hdr = self.hdr
@@ -350,43 +353,41 @@ class Field:
         prnt(self.filename,'Converted coordinates to RA/Dec')
         return world
 
-    def Photometry(self):
+    def Photometry(self): 
+        
         ### perform aperture photometry
         hdr,img = self.hdr,self.img
         egain = float(hdr['EGAIN'])
 
-        bkg = sep.Background(img) # get background noise from image (maybe need to looki into issues with this?)
+        bkg = sep.Background(img) # get background noise from image
         img_sub = img - bkg # subtract background
         flux, fluxerr, flag = sep.sum_circle(img_sub, self.source['X'], self.source['Y'], self.aperture_size, err=bkg.globalrms)
         # get flux values from source extraction package
         instmag = -2.5*np.log10(flux) # convert flux to instrumental magnitude
-        snr = np.sqrt(flux*egain)
-        instmag_err = 1/snr
+        snr = np.sqrt(flux*egain) # calculate the signal to noise ratio (SNR)
+        instmag_err = 1/snr # convert SNR to the uncertainty in the instrumental magnitudes
 
-        for j in flux:
+        for j in flux: # if background subtraction isn't working correctly you can get negative flux values
             if j<0:
-                print('Negative')
+                print('filename: '+self.filename)
+                raise Exception('Negative flux, likely a background subtraction issue')
 
-        # snr = np.sqrt(final_sum*egain) 
 
-        # instmag_err = 1/snr
-        # instmag = -2.5*np.log10(final_sum)
 
 
         ### retrieve magnitudes from catalog
         time = hdr['DATE-OBS'] # time image was taken
         time = datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f') # convert string to datetime object
-        filt = hdr['FILTER']
-        objects = self.world
+        filt = hdr['FILTER'] # filter of image
+        objects = self.world 
 
         # lookup data in the UCAC4 catalog by querying Vizier
         v = Vizier(columns=['UCAC4','+_r','RAJ2000','DEJ2000','Bmag','Vmag','rmag'])
         output = OrderedDict([('id',[]),('RA_C',[]),('DEC_C',[]),('RA_M',[]),('DEC_M',[]),('DIF',[]),('MAG_R',[]),('MAG_V',[]),('MAG_B',[]),('MAG_err',[]),('CMAG_R',[]),('CMAG_V',[]),('CMAG_B',[]),('DATETIME',[]),('IMGNAME',[])])
-        output['MAG_err'] = instmag_err
-        cmags = [] # catalog magnitudes list
-        misfires = 0 # number of errors
-        
-        objects_indices_matched = []
+        output['MAG_err'] = instmag_err # go ahead and write the errors into the output dict
+        cmags = [] # catalog magnitudes list we will update in the loop
+        misfires = 0 # number of errors 
+        objects_indices_matched = [] # will store the indices in the objects list of the ones we match to the catalog, so that we only use those stars to calculate offset
 
         for n in range(len(objects)):
             catalog = 'UCAC4' # specify catalog 
@@ -402,6 +403,7 @@ class Field:
             except: # !! important, if we do not find a match we still save the data as this may be an anomoly or an object like an asteroid
                 prnt(self.filename,'No star match within 2 arcseconds')
                 misfires += 1 
+                # manually fill in the data with mostly nan (not a number) values 
                 output['id'].append('nan')
                 output['RA_C'].append('nan')
                 output['DEC_C'].append('nan')
@@ -413,19 +415,20 @@ class Field:
                 cmags.append('nan') 
                 continue # skip to the next object by moving to the next iteration of the loop
 
+            # these lists are usually just 1 element but its important to have them to store every star located if we were looking in a very crowded field
             ids = np.array(result['UCAC4'],str) # get array of all the stars identified
-            ra = np.array(result['RAJ2000'],float)
-            dec = np.array(result['DEJ2000'],float) # catalog RA and Dec
-            dif = np.array(result['_r'],float)
+            ra = np.array(result['RAJ2000'],float) # get array of catalog RA for those stasr
+            dec = np.array(result['DEJ2000'],float) # catalog Dec for those stars
+            dif = np.array(result['_r'],float) # difference from target
             
             fluxtype = filt+'mag' # get a variable for fluxtype to match to catalog magnitude types
             if filt=='R':
                 fluxtype = 'rmag'
             
-            flux = np.array(result[fluxtype],float)
+            flux = np.array(result[fluxtype],float) # store the filter catalog magnitude for the stars matched
 
             for i in range(len(ids)): # for all the stars matched, 
-                if dif[i] <= 2 and i==np.argmin(dif) and ids[i] not in output['id']: # pick the star w the min residual value and less than 2 arcsec off
+                if dif[i] <= 2 and i==np.argmin(dif) and ids[i] not in output['id']: # pick the star w the min residual value and less than 2 arcsec off and hasn't been identified yet
                     prnt(self.filename,'Star match in %s, mag %s, residual %s arcsec' % (catalog,flux[i],dif[i]))
                     output['id'].append(ids[i]) # add this data to the output dictionary 
                     output['RA_C'].append(ra[i])
@@ -438,7 +441,7 @@ class Field:
                     cmags.append(flux[i])
                     objects_indices_matched.append(n)
 
-                else:
+                else: # if the star has already been identified 
                     prnt(self.filename,'No star match within 2 arcseconds')
                     misfires += 1
                     output['id'].append('nan')
@@ -453,46 +456,35 @@ class Field:
                     continue
 
 
-        prnt(self.filename,'Output %s stars' % len(output['id']))
-        prnt(self.filename,'Output %s unique stars' % len(set(output['id'])))
+        prnt(self.filename,'Output %s stars' % len(set([v for v in output['id'] if not math.isnan(float(v))])))
         prnt(self.filename,'Missed %s objects' % misfires)
         
-
-        instmags_to_median = [instmag[m] for m in objects_indices_matched]
-        cmags_nonan = [k for k in cmags if not math.isnan(float(k))] 
+        instmags_to_median = [instmag[m] for m in objects_indices_matched] # instrumental magnitudes that matched to the catalog
+        # we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
+        cmags_nonan = [k for k in cmags if not math.isnan(float(k))] # get rid of the nan values 
         
-        if not len(instmags_to_median)==len(cmags_nonan):
+        if not len(instmags_to_median)==len(cmags_nonan): # the two lists above must be the same length to gaurantee that we are using the same stars for offset calculation
             raise Exception('Catalog comparison list not same length as instrumental magnitude list')
 
-        # with open(self.filename+'.csv', 'a') as outfile:
-        #     writer = csv.writer(outfile)
-        #     writer.writerows(magnitudes)
+        d = np.array(cmags_nonan) - np.array(instmags_to_median) # calculate the differences for each star
+        d = float(np.median(d)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
 
-        # median_i = np.median(np.array(instmags_to_median))
-        # median_c = np.median(np.array(cmags_nonan)) # median of catalog magnitude values
-        d = np.array(cmags_nonan) - np.array(instmags_to_median)
-        d = float(np.median(d))
-
-        # d = float(median_c) - float(median_i) # difference is the difference between the medians
-
-
-        for i in ['R','V','B']:
-            magtype = 'MAG_'+i
-            if i==filt:
-                output[magtype] = instmag
+        for i in ['R','V','B']: # for each filter
+            magtype = 'MAG_'+i 
+            if i==filt: # if that is the filter the image used
+                output[magtype] = instmag+d # set the output array as the intrumental magnitudes + the constant offset
             else:
-                output[magtype] = np.full(np.shape(instmag),'---',dtype="S3")
+                output[magtype] = np.full(np.shape(instmag),'---',dtype="S3") # otherwise fill with null values
 
-        for i in ['R','V','B']:
-            magtype = 'CMAG_'+i
+        for i in ['R','V','B']: # same thing
+            magtype = 'CMAG_'+i 
             if i==filt:
-                output[magtype] = cmags
+                output[magtype] = cmags # set the output as the catalog magnitudes
             else:
-                output[magtype] = np.full(np.shape(cmags),'---',dtype="S3")
+                output[magtype] = np.full(np.shape(cmags),'---',dtype="S3") # otherwise fill with null values
 
-        output['MAG_'+filt] += d # offset magnitudes by that difference 
         
-        prnt(self.filename,'Wrote magnitude data to sources.csv')
+        prnt(self.filename,'Wrote magnitude data to sources.csv') 
         sleep(3)
         print(' ')
         sleep(1)
