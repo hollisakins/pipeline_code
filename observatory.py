@@ -98,22 +98,23 @@ def makeMasters(writeOver=False):
     # sort the calibration images by type and store them in arrays
     for filename in filenames:
         with fits.open(path_to_cal+filename) as hdulist: 
-            img = hdulist[0].data # split into data and header
             hdr = hdulist[0].header
             typ = hdr['IMAGETYP'] # save image type as variable
             binn = hdr['XBINNING'] # save binning as variable
             if typ=='Bias Frame':
                 exec('bias'+str(binn)+'_header=hdr') # save the header to write back into the master
-                exec('bias'+str(binn)+'.append(img)') # add the data to the list with respective type/binning
+                exec('bias'+str(binn)+'.append(filename)') # add the data to the list with respective type/binning
             if typ=='Dark Frame':
                 exec('dark'+str(binn)+'_header=hdr')
-                exec('dark'+str(binn)+'.append(img)')
+                exec('dark'+str(binn)+'.append(filename)')
             if typ=='Flat Field':
                 exec(hdr['FILTER']+str(binn)+'_header=hdr')
                 exec('filters'+str(binn)+".append(hdr['FILTER'])") # store the filters found in this directory in a list
                 # so that we don't attempt to create new master flats with filters we did not have raw flats for
-                exec(hdr['FILTER']+str(binn)+'.append(img)') 
-    
+                exec(hdr['FILTER']+str(binn)+'.append(filename)') 
+
+    print(bias1)
+
     print('')
     print('\tIndexed files:        Binning1x1  Binning2x2  Binning3x3  Binning4x4')
     print('\t\tBias:             %s          %s          %s          %s' % (len(bias1),len(bias2),len(bias3),len(bias4)))
@@ -128,18 +129,32 @@ def makeMasters(writeOver=False):
     print('\t\tLum Flat:         %s          %s          %s          %s' % (len(Lum1),len(Lum2),len(Lum3),len(Lum4)))
     print('')
 
+
+
     ## make the masters
     for i in ['1','2','3','4']: # for each binning factor 
         exec('s=np.size(bias'+i+')') # define var s as the size of the list
         if not s==0: # if the size is nonzero, there is data for that type & binning
-            exec('bias'+i+'_master=np.median(np.array(bias'+i+'),axis=0)') # define bias master as the 
+            exec('filenames = bias'+i)
+            master = []
+            for filename in filenames:
+                with fits.open(path_to_cal+filename) as hdulist:
+                    img = hdulist[0].data
+                    master.append(img)
+            exec('bias'+i+'_master=np.median(np.array(master),axis=0)') # define bias master as the 
             print('\tConstructed a master bias with binning %sx%s' % (i,i))
 
     for i in ['1','2','3','4']:
         exec('s=np.size(dark'+i+')')
         if not s==0:
             try: # try to  make dark master
-                exec('dark'+i+'_master=np.median(np.array(dark'+i+')-bias'+i+'_master,axis=0)') # make dark master by removing the bias first
+                exec('filenames = dark'+i)
+                master = []
+                for filename in filenames:
+                    with fits.open(path_to_cal+filename) as hdulist:
+                        img = hdulist[0].data
+                        master.append(img)
+                exec('dark'+i+'_master=np.median(np.array(master)-bias'+i+'_master,axis=0)') # make dark master by removing the bias first
                 print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
             except NameError: # if you get a NameError:
                 print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i))
@@ -151,7 +166,13 @@ def makeMasters(writeOver=False):
         for i in f: # for each UNIQUE filter
             exec('s=np.size('+i+j+')')
             if not s==0: 
-                exec(i+j+"_master = np.median("+i+j+",axis=0)/np.max(np.median("+i+j+",axis=0))")  # normalize flat field and make master
+                exec('filenames = '+i+j)
+                master = []
+                for filename in filenames:
+                    with fits.open(path_to_cal+filename) as hdulist:
+                        img = hdulist[0].data
+                        master.append(img)
+                exec(i+j+"_master = np.median(master,axis=0)/np.max(np.median(master,axis=0))")  # normalize flat field and make master
                 print('\tConstructed master %s flat with binning %sx%s' % (i,j,j))
     
 

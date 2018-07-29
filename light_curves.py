@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import matplotlib
 import sys
 import os
-from scipy.stats import describe
 import random
 
 import sys
