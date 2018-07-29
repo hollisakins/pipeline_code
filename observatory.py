@@ -113,7 +113,6 @@ def makeMasters(writeOver=False):
                 # so that we don't attempt to create new master flats with filters we did not have raw flats for
                 exec(hdr['FILTER']+str(binn)+'.append(filename)') 
 
-    print(bias1)
 
     print('')
     print('\tIndexed files:        Binning1x1  Binning2x2  Binning3x3  Binning4x4')
@@ -369,20 +368,27 @@ class Field:
         del flat_fits,bias_fits,dark_fits
 
     def Source(self): # gathers source extraction data from .SRC file
-        src = np.loadtxt(self.calibrated_path+self.filename.replace('.fits','.SRC'))
-        objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
-        X_pos = src[:,0]
-        Y_pos = src[:,1]
-        fwhm = src[:,3]
-        A = src[:,8] # these last three are solely for plotting purposes
-        B = src[:,9]
-        theta = src[:,10]
-        prnt(self.filename,'Gathered source data')
-        return {'obj':objects,'X':X_pos,'Y':Y_pos,'fwhm':fwhm,'A':A,'B':B,'theta':theta} # return source data as dict
+        try:
+            src = np.loadtxt(self.calibrated_path+self.filename.replace('.fits','.SRC'))
+            objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
+            X_pos = src[:,0]
+            Y_pos = src[:,1]
+            fwhm = src[:,3]
+            A = src[:,8] # these last three are solely for plotting purposes
+            B = src[:,9]
+            theta = src[:,10]
+            prnt(self.filename,'Gathered source data')
+            return {'obj':objects,'X':X_pos,'Y':Y_pos,'fwhm':fwhm,'A':A,'B':B,'theta':theta} # return source data as dict
+        except IOError:
+            return 'NOSRC'
 
 
     def Convert(self): # converts obj list in pixel coordinate to RA-dec coordinates
         hdr = self.hdr
+        try:
+            test = hdr['WCSVER']
+        except KeyError:
+            return 'NOWCS'
         w = wcs.WCS(hdr) # gets WCS matrix from the header
         objects = self.source['obj']
         world = w.wcs_pix2world(objects, 1) # World Coorindate System function converts matrix in fits header to RA/Dec
@@ -608,7 +614,15 @@ class Field:
    
     def Extract(self):
         self.source = self.Source()
-        self.world = self.Convert()
-        self.output = self.Photometry()
-        self.writeData()
+        if self.source == 'NOSRC':
+            prnt(self.filename,'No .SRC file exists for this image, skipping...',alert=True)
+            sleep(2)
+        else:
+            self.world = self.Convert()
+            if self.world =='NOWCS':
+                prnt(self.filename,'No WCS data exists in the header for this image, skipping...',alert = True)
+                sleep(2)
+            else:
+                self.output = self.Photometry()
+                self.writeData()
 
