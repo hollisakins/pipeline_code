@@ -32,20 +32,34 @@ warnings.simplefilter('ignore')
 slow = False # if slow=True it will pause between printing each line just to make it easier to read, good for testing since it can go really fast
 
 # function for printing the output consistently 
-def prnt(indent,strng,filename=False):
+def prnt(indent,strng,filename=False,alert=False):
     # if filename=True it will print the name of the file at the left
-    if slow:
-        if not filename:
-            print(' '*len(indent+': ')+strng)
-            sleep(0.3)
-        else: 
-            print(indent+': '+strng)
-            sleep(0.3)
+    if alert:
+        if slow:
+            if not filename:
+                print(' '*(len(indent)-2)+'!!! '+strng)
+                sleep(0.3)
+            else: 
+                print(indent+': '+strng)
+                sleep(0.3)
+        else:
+            if not filename:
+                print(' '*(len(indent)-2)+'!!! '+strng)
+            else: 
+                print(indent+': '+strng)
     else:
-        if not filename:
-            print(' '*len(indent+': ')+strng)
-        else: 
-            print(indent+': '+strng)
+        if slow:
+            if not filename:
+                print(' '*len(indent+': ')+strng)
+                sleep(0.3)
+            else: 
+                print(indent+': '+strng)
+                sleep(0.3)
+        else:
+            if not filename:
+                print(' '*len(indent+': ')+strng)
+            else: 
+                print(indent+': '+strng)
 
 # simple function to print a line at the top of the screen that shows what process is going on 
 def header(i):
@@ -338,11 +352,12 @@ class Field:
         objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
         X_pos = src[:,0]
         Y_pos = src[:,1]
+        fwhm = src[:,3]
         A = src[:,8] # these last three are solely for plotting purposes
         B = src[:,9]
         theta = src[:,10]
         prnt(self.filename,'Gathered source data')
-        return {'obj':objects,'X':X_pos,'Y':Y_pos,'A':A,'B':B,'theta':theta} # return source data as dict
+        return {'obj':objects,'X':X_pos,'Y':Y_pos,'fwhm':fwhm,'A':A,'B':B,'theta':theta} # return source data as dict
 
 
     def Convert(self): # converts obj list in pixel coordinate to RA-dec coordinates
@@ -358,28 +373,62 @@ class Field:
         ### perform aperture photometry
         hdr,img = self.hdr,self.img
         egain = float(hdr['EGAIN'])
+        prnt(self.filename,'Performing aperture photometry...')
+        # bkg = sep.Background(img) # get background noise from image
+        # img_sub = img - bkg # subtract background
+        self.aperture_size = self.source['fwhm']*2.5
+        r_in = 1.2*self.aperture_size
+        r_out = 2.0*self.aperture_size
+        indices_to_remove = []
+        objects_to_remove = []
+        fluxes = []
+        fluxerrs = []
+        objects = self.world 
 
-        bkg = sep.Background(img) # get background noise from image
-        img_sub = img - bkg # subtract background
-        flux, fluxerr, flag = sep.sum_circle(img_sub, self.source['X'], self.source['Y'], self.aperture_size, err=bkg.globalrms)
+        for i in range(len(self.source['X'])):
+            if self.source['fwhm'][i]==0:
+                prnt(self.filename,'FWHM zero at pixel position (%s,%s), star discarded' % (self.source['X'][i],self.source['Y'][i]),alert=True)
+                objects_to_remove.append(i)
+            else:
+                flux, fluxerr, flag = sep.sum_circle(img, self.source['X'][i], self.source['Y'][i], self.aperture_size[i],gain=egain)
+                if not flag==0:
+                    prnt(self.filename,'SEP flag #'+str(flag)+', corrupted aperture data, star discarded',alert=True)
+                    if flag==16:
+                        indices_to_remove.append(i)
+                flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in[i], r_out[i],gain=egain)
+                bkg_mean = flux_annulus / (math.pi*(r_out[i]*r_out[i]-r_in[i]*r_in[i]))
+                flux = flux - bkg_mean * (math.pi*self.aperture_size[i]*self.aperture_size[i])
+                fluxes.append(flux)
+                fluxerrs.append(fluxerr)
+
         # get flux values from source extraction package
+        flux = np.array(fluxes)
+
+        for j in range(len(flux)): # if background subtraction isn't working correctly you can get negative flux values
+            if flux[j]<0:
+                prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['X'][j],self.source['Y'][j]),alert=True)
+                indices_to_remove.append(j)
+            
+        flux = np.delete(flux, (indices_to_remove), axis=0)
+        for z in objects_to_remove:
+            indices_to_remove.append(z)
+        objects = np.delete(objects, (indices_to_remove), axis=0)
+
+
         instmag = -2.5*np.log10(flux) # convert flux to instrumental magnitude
-        snr = np.sqrt(flux*egain) # calculate the signal to noise ratio (SNR)
-        instmag_err = 1/snr # convert SNR to the uncertainty in the instrumental magnitudes
+        # snr = np.sqrt(flux) # calculate the signal to noise ratio (SNR)
+        # instmag_err = 1/snr # convert SNR to the uncertainty in the instrumental magnitudes
 
-        for j in flux: # if background subtraction isn't working correctly you can get negative flux values
-            if j<0:
-                print('filename: '+self.filename)
-                raise Exception('Negative flux, likely a background subtraction issue')
-
-
+        instmag_err = 1/np.array(fluxerrs)
+        prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
+        print('')
+        prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
 
 
         ### retrieve magnitudes from catalog
         time = hdr['DATE-OBS'] # time image was taken
         time = datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f') # convert string to datetime object
         filt = hdr['FILTER'] # filter of image
-        objects = self.world 
 
         # lookup data in the UCAC4 catalog by querying Vizier
         v = Vizier(columns=['UCAC4','+_r','RAJ2000','DEJ2000','Bmag','Vmag','rmag'])
@@ -456,7 +505,7 @@ class Field:
                     continue
 
 
-        prnt(self.filename,'Output %s stars' % len(set([v for v in output['id'] if not math.isnan(float(v))])))
+        prnt(self.filename,'Output %s stars' % len(set([v for v in output['id'] if v!='nan'])))
         prnt(self.filename,'Missed %s objects' % misfires)
         
         instmags_to_median = [instmag[m] for m in objects_indices_matched] # instrumental magnitudes that matched to the catalog
