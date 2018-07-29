@@ -6,7 +6,7 @@ if not vers=='2.7':
 
 import observatory
 
-observatory.makeMasters()
+#observatory.makeMasters()
 
 f = observatory.Field()
 f.initialize()

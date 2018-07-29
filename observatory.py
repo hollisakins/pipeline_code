@@ -368,9 +368,11 @@ class Field:
         del flat_fits,bias_fits,dark_fits
 
     def Source(self): # gathers source extraction data from .SRC file
-        try:
+        print(self.calibrated_path+self.filename.replace('.fits','.SRC'))
+	try:
             src = np.loadtxt(self.calibrated_path+self.filename.replace('.fits','.SRC'))
-            objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
+            print(src)
+	    objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
             X_pos = src[:,0]
             Y_pos = src[:,1]
             fwhm = src[:,3]
@@ -381,6 +383,8 @@ class Field:
             return {'obj':objects,'X':X_pos,'Y':Y_pos,'fwhm':fwhm,'A':A,'B':B,'theta':theta} # return source data as dict
         except IOError:
             return 'NOSRC'
+	except IndexError:
+	    return 'NOSRC'
 
 
     def Convert(self): # converts obj list in pixel coordinate to RA-dec coordinates
