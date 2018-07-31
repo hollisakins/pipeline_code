@@ -6,11 +6,11 @@ if not vers=='2.7':
 
 import observatory
 
-#observatory.makeMasters()
+# observatory.makeMasters()
 
 f = observatory.Field()
+f.aperture_size = 30
 f.initialize()
-
 
 for filename in f.list_of_files:
     f.openFits(filename,calibrated=False)

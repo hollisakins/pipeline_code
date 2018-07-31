@@ -201,15 +201,19 @@ while True:
             printright('Choice Registered: All time data',clear=True,delay=True)
 
         mags,error,time = [],[],[]
+
+
+
         for x in indices:
             mags.append(sources['MAG_'+filt][x])
             error.append(sources['MAG_err'][x])
             time.append(datetime.strptime(sources['DATETIME'][x], '%Y-%m-%d %H:%M:%S.%f'))
 
-        mags = [mags[x] for x in range(len(mags)) if isinstance(mags[x], float)]
-        error = [error[x] for x in range(len(error)) if isinstance(error[x], float)]
+        mags = [float(mags[x]) for x in range(len(mags)) if not math.isnan(float(mags[x]))]
+
+        error = [float(error[x]) for x in range(len(error)) if not math.isnan(float(error[x]))]
         try:
-            time = [time[x] for x in range(len(time)) if isinstance(mags[x], float)]
+            time = [time[x] for x in range(len(time)) if not math.isnan(float(mags[x]))]
         except IndexError:
             print('\tNo %s magnitude data found' % filt)
             sleep(0.5)
@@ -225,11 +229,12 @@ while True:
 
 
         plt.figure(figsize=(10,8))
-        plt.errorbar(time, mags, c='k', label=filt+' mag',yerr=error,fmt='.')
+        label = str(filt+' mag')
+        plt.errorbar(time, mags, c='k', label=label,yerr=error,fmt='.')
         
         duration = end - start
         date_list = [start + timedelta(seconds=x) for x in range(0, int(duration.total_seconds()))]
-        cmag = np.mean([sources['CMAG_'+filt][c] for c in indices])
+        cmag = np.mean([float(sources['CMAG_'+filt][c]) for c in indices])
         cmags = [cmag for r in range(len(date_list))]
         plt.plot(date_list,cmags,linestyle='dashdot',color='black',label='Catalog '+filt+' mag')
 

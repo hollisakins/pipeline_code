@@ -368,9 +368,9 @@ class Field:
         del flat_fits,bias_fits,dark_fits
 
     def Source(self): # gathers source extraction data from .SRC file
-	try:
+        try:
             src = np.loadtxt(self.calibrated_path+self.filename.replace('.fits','.SRC'))
-	    objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
+            objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
             X_pos = src[:,0]
             Y_pos = src[:,1]
             fwhm = src[:,3]
@@ -381,8 +381,8 @@ class Field:
             return {'obj':objects,'X':X_pos,'Y':Y_pos,'fwhm':fwhm,'A':A,'B':B,'theta':theta} # return source data as dict
         except IOError:
             return 'NOSRC'
-	except IndexError:
-	    return 'NOSRC'
+        except IndexError:
+            return 'NOSRC'
 
 
     def Convert(self): # converts obj list in pixel coordinate to RA-dec coordinates
@@ -405,9 +405,7 @@ class Field:
         prnt(self.filename,'Performing aperture photometry...')
         # bkg = sep.Background(img) # get background noise from image
         # img_sub = img - bkg # subtract background
-        self.aperture_size = self.source['fwhm']*2.5
-        r_in = 1.2*self.aperture_size
-        r_out = 2.0*self.aperture_size
+        # self.aperture_size = self.source['fwhm']*2.5
         indices_to_remove = []
         objects_to_remove = []
         fluxes = []
@@ -419,14 +417,44 @@ class Field:
                 prnt(self.filename,'FWHM leq zero at pixel position (%s,%s), star discarded' % (self.source['X'][i],self.source['Y'][i]),alert=True)
                 objects_to_remove.append(i)
             else:
-		flux, fluxerr, flag = sep.sum_circle(img, self.source['X'][i], self.source['Y'][i], self.aperture_size[i],gain=egain)
-		if not flag==0:
-                    prnt(self.filename,'SEP flag #'+str(flag)+', corrupted aperture data, star discarded',alert=True)
+                # self.aperture_size = self.source['fwhm'][i]*2
+                r_in = 1.5*self.aperture_size
+                r_out = 2.0*self.aperture_size
+                flux, fluxerr, flag = sep.sum_circle(img, self.source['X'][i], self.source['Y'][i], self.aperture_size,gain=egain)
+                if not flag==0:
                     if flag==16:
-                        objects_to_remove.append(i)
-                flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in[i], r_out[i],gain=egain)
-                bkg_mean = flux_annulus / (math.pi*(r_out[i]*r_out[i]-r_in[i]*r_in[i]))
-                flux = flux - bkg_mean * (math.pi*self.aperture_size[i]*self.aperture_size[i])
+                        prnt(self.filename,'SEP flag #'+str(flag)+', corrupted aperture data, star discarded',alert=True)
+                        indices_to_remove.append(i)
+                    else:
+                        prnt(self.filename,'SEP flag #'+str(flag),alert=True)
+                
+                # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in, r_out,gain=egain)
+                # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
+                # flux = flux - bkg_mean * (math.pi*self.aperture_size*self.aperture_size)
+                
+                annulus_values = []
+                for dx in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
+                    for dy in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
+                        if np.sqrt(dx*dx+dy*dy)>r_in and np.sqrt(dx*dx+dy*dy)<r_out:
+                            x_index = int(self.source['X'][i]+dx)
+                            y_index = int(self.source['Y'][i]+dy)
+                            try:
+                                annulus_values.append(img[y_index,x_index])
+                            except IndexError:
+                                pass
+                
+                q75, q25 = np.percentile(annulus_values, [75 ,25])
+                iqr = q75 - q25
+                cutoff = np.mean(annulus_values)+1.5*iqr
+                # size_before = int(len(annulus_values))
+                annulus_values = [a for a in annulus_values if a<=cutoff]
+                # size_after = int(len(annulus_values))
+                # if not size_after==size_before:
+                #     prnt(self.filename,'Removed %s outliers from annulus' % (size_before-size_after), alert=True)
+                
+                bkg_mean = np.mean(annulus_values)
+                flux = flux - bkg_mean * math.pi * self.aperture_size * self.aperture_size
+
                 fluxes.append(flux)
                 fluxerrs.append(fluxerr)
 
@@ -439,8 +467,7 @@ class Field:
                 indices_to_remove.append(j)
 
         flux = np.delete(flux, (indices_to_remove), axis=0)
-        for z in objects_to_remove:
-            indices_to_remove.append(z)
+        indices_to_remove = np.append(indices_to_remove,objects_to_remove)
         objects = np.delete(objects, (indices_to_remove), axis=0)
 
         instmag = -2.5*np.log10(flux) # convert flux to instrumental magnitude
@@ -516,8 +543,8 @@ class Field:
                     output['DATETIME'].append(time)
                     output['IMGNAME'].append(self.filename)
                     cmags.append(flux[i])
-                    if not math.isnan(flux[i]): 
-			objects_indices_matched.append(n)
+                    if not math.isnan(flux[i]):
+                        objects_indices_matched.append(n)
 
                 else: # if the star has already been identified 
                     prnt(self.filename,'No star match within 2 arcseconds')
@@ -539,7 +566,7 @@ class Field:
         instmags_to_median = [instmag[m] for m in objects_indices_matched] # instrumental magnitudes that matched to the catalog
         # we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
 	
-	cmags_nonan = [k for k in cmags if not math.isnan(float(k))] # get rid of the nan values 
+        cmags_nonan = [k for k in cmags if not math.isnan(float(k))] # get rid of the nan values 
         if not len(instmags_to_median)==len(cmags_nonan): # the two lists above must be the same length to gaurantee that we are using the same stars for offset calculation
             raise Exception('Catalog comparison list not same length as instrumental magnitude list')
 
