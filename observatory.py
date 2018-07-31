@@ -454,7 +454,7 @@ class Field:
                 
                 bkg_mean = np.mean(annulus_values)
                 flux = flux - bkg_mean * math.pi * self.aperture_size * self.aperture_size
-
+                fluxerr = np.sqrt(fluxerr*fluxerr+np.sum(annulus_values))
                 fluxes.append(flux)
                 fluxerrs.append(fluxerr)
 
