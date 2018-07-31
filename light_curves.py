@@ -1,3 +1,5 @@
+import observatory
+observatory.checkversion()
 import pandas as pd
 import numpy as np
 import csv
@@ -10,11 +12,6 @@ import sys
 import os
 import random
 
-import sys
-
-vers = '%s.%s' % (sys.version_info[0],sys.version_info[1])
-if not vers=='2.7':
-    raise Exception("Must be using Python 2.7")
 
 
 print("\033c")
@@ -134,7 +131,7 @@ while True:
 
         choice=int(raw_input("\n\n\tSelection (number): "))
         choice = str(choices[choice-1][0])
-        printright('Choice Registered: Test Star '+choice,clear=True)
+        printright('Choice Registered: '+choice,clear=True)
         indices = np.nonzero(sources['id']==choice)[0]
         printright('%s data points found' % len(indices),delay=True)
 
@@ -166,8 +163,8 @@ while True:
                 indices.append(j)
 
         print('\tFound %s data points within 1 arcminutes' % len(indices))
-        radius_flag = raw_input("\tEnter smaller search radius in arcseconds or enter 'n' keep 1 arcmin: ")
-        if radius_flag=='n':
+        radius_flag = raw_input("\tEnter smaller search radius in arcseconds or press Enter keep 1 arcmin: ")
+        if radius_flag=='':
             pass
         else:
             radius = float(radius_flag)
@@ -221,8 +218,9 @@ while True:
             end = datetime.strptime(end,'%Y/%m/%d/%H/%M')
         
         if timeflag=='a':
-            start = datetime.strptime(np.amin(sources['DATETIME']), '%Y-%m-%d %H:%M:%S.%f')
-            end = datetime.strptime(np.amax(sources['DATETIME']), '%Y-%m-%d %H:%M:%S.%f')
+            datetimes = [datetime.strptime(sources['DATETIME'][x], '%Y-%m-%d %H:%M:%S.%f') for x in indices]
+            start = np.amin(datetimes)
+            end = np.amax(datetimes)
             printright('Choice Registered: All time data',clear=True,delay=True)
 
         mags,error,time = [],[],[]
@@ -265,13 +263,13 @@ while True:
         plt.plot(date_list,cmags,linestyle='dashdot',color='black',label='Catalog '+filt+' mag')
 
         plt.legend()
-        plt.gca().invert_yaxis()
 
         plt.ticklabel_format(useOffset=False,axis='y')
         
         plt.xlim(start,end)
         mean, std = np.mean(mags), np.std(mags)
         plt.ylim(mean-25*std,mean+25*std)
+        plt.gca().invert_yaxis()
         plt.xlabel('Time')
         plt.ylabel('Magnitude')
         plt.xticks(rotation=50)
@@ -336,8 +334,9 @@ while True:
             start = datetime.strptime(start,'%Y/%m/%d/%H/%M')
             end = datetime.strptime(end,'%Y/%m/%d/%H/%M')
         if timeflag=='a':
-            start = datetime.strptime(np.amin(sources['DATETIME']), '%Y-%m-%d %H:%M:%S.%f')
-            end = datetime.strptime(np.amax(sources['DATETIME']), '%Y-%m-%d %H:%M:%S.%f')
+            datetimes = [datetime.strptime(sources['DATETIME'][x], '%Y-%m-%d %H:%M:%S.%f') for x in indices]
+            start = np.amin(datetimes)
+            end = np.amax(datetimes)
             printright('Choice Registered: All time data',clear=True,delay=True)
 
         filt = ['R','V','B']
@@ -366,7 +365,6 @@ while True:
 
 
         plt.legend()
-        plt.gca().invert_yaxis()
 
         plt.ticklabel_format(useOffset=False,axis='y')
         
@@ -374,6 +372,7 @@ while True:
 
         mean, std = np.mean(mags[1]), np.std(mags[1])
         plt.ylim(mean-25*std,mean+25*std)
+        plt.gca().invert_yaxis()
         plt.xlabel('Time')
         plt.ylabel('Magnitude')
         plt.xticks(rotation=50)

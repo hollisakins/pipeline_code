@@ -18,6 +18,10 @@ import astropy.coordinates as coord # for inputting coordinates into Vizier
 import astropy.units as u # for units for the coord module
 import sep # source extraction package based on the SExtractor application
 
+def checkversion():
+    vers = '%s.%s' % (sys.version_info[0],sys.version_info[1])
+    if not vers=='2.7':
+        raise Exception("Must be using Python 2.7")
 
 # defines the width of the console to print output more clearly 
 rows, columns = os.popen('stty size', 'r').read().split()
@@ -65,6 +69,16 @@ def prnt(indent,strng,filename=False,alert=False):
 def header(i):
     print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
     print('')
+
+def writeError(description):
+    name = 'errorlog.txt'
+    if not os.path.exists(name):
+        with open(name,'w') as erlog:
+            pass
+    with open(name,'a') as erlog:
+        time = strftime("%Y-%m-%d %H:%M GMT", gmtime())
+        description = time+': '+description+'\n'
+        erlog.write(description)
 
 
 def makeMasters(writeOver=False):
@@ -157,8 +171,7 @@ def makeMasters(writeOver=False):
                 print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
             except NameError: # if you get a NameError:
                 print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i))
-                with open('DR_errorlog.txt','a') as erlog:
-                    erlog.write('Failed to create scalable dark with binning %sx%s, no bias master present at'+strftime("%Y%m%d %H:%M GMT", gmtime()))
+                writeError('No bias master for binning %sx%s, failed to create dark' % (i,i))
 
     for j in ['1','2','3','4']: 
         exec('f=np.unique(filters'+j+')') # establish unique filters 
@@ -208,6 +221,16 @@ class Field:
         self.calibrated = False
         self.aperture_size = 80.0
         self.max_temp = -3.0
+    
+    def writeError(self,description):
+        name = 'errorlog.txt'
+        if not os.path.exists(name):
+            with open(name,'w') as erlog:
+                pass
+        with open(name,'a') as erlog:
+            time = strftime("%Y-%m-%d %H:%M GMT", gmtime())
+            description = time+': '+self.filename+': '+description+'\n'
+            erlog.write(description)
 
     def openFits(self,filename,calibrated=False):
         self.filename = filename
@@ -292,8 +315,7 @@ class Field:
             prnt(self.filename,'Successfully opened bias master %s' % self.path_to_cal+'bias_master.fit')
         except: # if you encounter error
             prnt(self.filename,'Failed to open bias master %s' % self.path_to_cal+'bias_master.fit. Wrote to DR_errorlog.txt')
-            with open('DR_errorlog.txt','a') as erlog: # open error log and write to it
-                erlog.write('Missing bias master at '+strftime("%Y%m%d %H:%M GMT", gmtime())+'. Auto DR halted.\n')
+            self.writeError('Missing bias master in %s. Data reduction halted' % self.path_to_cal)
             sys.exit() # exit the program since you can't calibrate files without a bias frame
 
         bias_h = bias_fits[0].header # split into header and data
@@ -305,8 +327,7 @@ class Field:
             prnt(self.filename,'Successfully opened dark master %s' % self.path_to_cal+'dark_master.fit')
         except:
             prnt(self.filename,'Failed to open dark master %s' % self.path_to_cal+'dark_master.fit. Wrote to DR_errorlog.txt')
-            with open('DR_errorlog.txt','a') as erlog:
-                erlog.write('Missing dark master at '+strftime("%Y%m%d %H:%M GMT", gmtime())+'. Auto DR halted.\n')
+            self.writeError('Missing dark master in %s. Data reduction halted' % self.path_to_cal)
             sys.exit()
 
         dark_h = dark_fits[0].header
@@ -321,8 +342,7 @@ class Field:
             prnt(self.filename,'Successfully opened '+self.path_to_cal+'flat_master_'+light_h['FILTER']+'.fit')
         except:
             prnt(self.filename,'Failed to open flat master %s' % self.path_to_cal+'flat_master_'+light_h['FILTER']+'.fit. Wrote to DR_errorlog.txt')
-            with open('DR_errorlog.txt','a') as erlog:
-                erlog.write('Missing '+light_h['FILTER']+'flat master at '+strftime("%Y%m%d %H:%M GMT", gmtime())+'. Auto DR halted.\n')
+            self.writeError('Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_cal))
             sys.exit()
         
         flat_h = flat_fits[0].header
@@ -350,19 +370,16 @@ class Field:
 
 
         elif self.calibrate(light_h,light)=='Redundant': # if it was already calibrated
-            with open('DR_errorlog.txt','a') as erlog:
-                erlog.write('Attempted redundant calibration on '+self.filename+' at '+strftime("%Y%m%d %H:%M GMT", gmtime())+'\n')
+            self.writeError('Attempted redundant calibration')
             prnt(self.filename,'Image already calibrated')
             self.save_file(light_h, light,self.filename) # still save the file because we can still use it
 
         elif self.calibrate(light_h,light)=='Temp': # if its temp is wrong
-            with open('DR_errorlog.txt','a') as erlog:
-                erlog.write('Image '+self.filename+' temp '+light_h['CCD-TEMP']+' degrees C, rejected calibration at '+strftime("%Y%m%d %H:%M GMT", gmtime())+'.')
+            self.writeError('Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
             prnt(self.filename,'Image taken at > '+str(self.max_temp)+' degrees C')
 
         elif self.calibrate(light_h,light)=='Size':
-            with open('DR_errorlog.txt','a') as erlog:
-                erlog.write('Image '+self.filename+' not full size, rejected calibration at '+strftime("%Y%m%d %H:%M GMT", gmtime())+'.')
+            self.writeError('Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Image not full size')
 
         del flat_fits,bias_fits,dark_fits
@@ -380,6 +397,7 @@ class Field:
             prnt(self.filename,'Gathered source data')
             return {'obj':objects,'X':X_pos,'Y':Y_pos,'fwhm':fwhm,'A':A,'B':B,'theta':theta} # return source data as dict
         except IOError:
+
             return 'NOSRC'
         except IndexError:
             return 'NOSRC'
@@ -398,23 +416,19 @@ class Field:
         return world
 
     def Photometry(self): 
-        
         ### perform aperture photometry
         hdr,img = self.hdr,self.img
         egain = float(hdr['EGAIN'])
         prnt(self.filename,'Performing aperture photometry...')
-        # bkg = sep.Background(img) # get background noise from image
-        # img_sub = img - bkg # subtract background
-        # self.aperture_size = self.source['fwhm']*2.5
-        indices_to_remove = []
-        objects_to_remove = []
-        fluxes = []
-        fluxerrs = []
+
+        indices_to_remove,objects_to_remove = [],[]
+        fluxes,fluxerrs = [],[]
         objects = self.world 
 
         for i in range(len(self.source['X'])):
             if self.source['fwhm'][i]<=0:
                 prnt(self.filename,'FWHM leq zero at pixel position (%s,%s), star discarded' % (self.source['X'][i],self.source['Y'][i]),alert=True)
+                self.writeError('SRC FWHM less than or equal to 0 at pixel position (%s,%s), star discarded from aperture photometry' % (self.source['X'][i],self.source['Y'][i]))
                 objects_to_remove.append(i)
             else:
                 # self.aperture_size = self.source['fwhm'][i]*2
@@ -423,10 +437,12 @@ class Field:
                 flux, fluxerr, flag = sep.sum_circle(img, self.source['X'][i], self.source['Y'][i], self.aperture_size,gain=egain)
                 if not flag==0:
                     if flag==16:
-                        prnt(self.filename,'SEP flag #'+str(flag)+', corrupted aperture data, star discarded',alert=True)
+                        prnt(self.filename,'SEP flag #%s, star too close to edge, star discarded' % str(flag),alert=True)
+                        self.writeError('Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
                         indices_to_remove.append(i)
                     else:
-                        prnt(self.filename,'SEP flag #'+str(flag),alert=True)
+                        prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
+                        self.writeError('Source Extractor flag #%s' % str(flag))
                 
                 # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in, r_out,gain=egain)
                 # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
@@ -446,11 +462,7 @@ class Field:
                 q75, q25 = np.percentile(annulus_values, [75 ,25])
                 iqr = q75 - q25
                 cutoff = np.mean(annulus_values)+1.5*iqr
-                # size_before = int(len(annulus_values))
                 annulus_values = [a for a in annulus_values if a<=cutoff]
-                # size_after = int(len(annulus_values))
-                # if not size_after==size_before:
-                #     prnt(self.filename,'Removed %s outliers from annulus' % (size_before-size_after), alert=True)
                 
                 bkg_mean = np.mean(annulus_values)
                 flux = flux - bkg_mean * math.pi * self.aperture_size * self.aperture_size
@@ -464,6 +476,7 @@ class Field:
         for j in range(len(flux)): # if background subtraction isn't working correctly you can get negative flux values
             if flux[j]<0:
                 prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['X'][j],self.source['Y'][j]),alert=True)
+                self.writeError('Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['X'][j],self.source['Y'][j]))
                 indices_to_remove.append(j)
 
         flux = np.delete(flux, (indices_to_remove), axis=0)
@@ -478,7 +491,8 @@ class Field:
         prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
         print('')
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
-
+        if not len(flux)==len(objects):
+            self.writeError('Number objects and fluxes do not match, resulting data is unreliable')
 
         ### retrieve magnitudes from catalog
         time = hdr['DATE-OBS'] # time image was taken
@@ -568,6 +582,7 @@ class Field:
 	
         cmags_nonan = [k for k in cmags if not math.isnan(float(k))] # get rid of the nan values 
         if not len(instmags_to_median)==len(cmags_nonan): # the two lists above must be the same length to gaurantee that we are using the same stars for offset calculation
+            self.writeError('Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
             raise Exception('Catalog comparison list not same length as instrumental magnitude list')
 
         d = np.array(cmags_nonan) - np.array(instmags_to_median) # calculate the differences for each star
@@ -644,11 +659,13 @@ class Field:
         self.source = self.Source()
         if self.source == 'NOSRC':
             prnt(self.filename,'No .SRC file exists for this image, skipping...',alert=True)
+            self.writeError('No .SRC file found, image skipped')
             sleep(2)
         else:
             self.world = self.Convert()
             if self.world =='NOWCS':
                 prnt(self.filename,'No WCS data exists in the header for this image, skipping...',alert = True)
+                self.writeError('No WCS data found in image header, image skipped')
                 sleep(2)
             else:
                 self.output = self.Photometry()
