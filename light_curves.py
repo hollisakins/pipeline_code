@@ -140,17 +140,42 @@ while True:
 
     if choice=='2':
         printright('Choice Registered: Coordinate Lookup',clear=True)
-        coords = raw_input("\tRA and DEC coordinates in decimal decrees (format 'RA,DEC'): ")
-        coords = coords.split(',')
-        RA = float(coords[0])
-        DEC = float(coords[1])
+        coord_type = raw_input("\tEnter in sexagesimal or decimal units? Enter 's' or 'd': ")
+        if coord_type=='s':
+            coords_ra = raw_input("\tEnter RA as 'Hours:Minutes:Seconds': ")
+            coords_dec = raw_input("\tEnter DEC as 'Degrees:Minutes:Seconds': ")
+            coords_ra = coords_ra.split(':')
+            RA = float(coords_ra[0])*15+float(coords_ra[1])/4+float(coords_ra[2])/240
+            coords_dec = coords_dec.split(':')
+            DEC = float(coords_dec[0])+float(coords_dec[1])/60+float(coords_dec[2])/60/60
+
+        else:
+            coords = raw_input("\tRA and DEC coordinates in decimal degrees (format 'RA,DEC'): ")
+            coords = coords.split(',')
+            RA = float(coords[0])
+            DEC = float(coords[1])
+
         difference = np.zeros(np.shape(sources['RA_M']))
         for j in range(len(sources['RA_M'])):
             RA_M = float(sources['RA_M'][j])
             DEC_M = float(sources['DEC_M'][j])
-            difference[j] = np.sqrt((RA_M-RA)**2+(DEC_M-DEC)**2)
+            difference[j] = math.sqrt((RA_M-RA)**2+(DEC_M-DEC)**2)
+        indices = []
+        for j in range(len(difference)):
+            if difference[j]<1/60.:
+                indices.append(j)
 
-        indices = np.nonzero(difference<(2/60/60))[0]
+        print('\tFound %s data points within 1 arcminutes' % len(indices))
+        radius_flag = raw_input("\tEnter smaller search radius in arcseconds or enter 'n' keep 1 arcmin: ")
+        if radius_flag=='n':
+            pass
+        else:
+            radius = float(radius_flag)
+            indices = []
+            for j in range(len(difference)):
+                if difference[j]<=radius/60.0/60.0:
+                    indices.append(j)
+
         printright('%s data points found' % len(indices),delay=True)
 
     if choice=='1':
@@ -226,7 +251,8 @@ while True:
             continue
 
         saveflag = raw_input("\tSave plot as file? (will also save summary statistics to .txt file [y/n]: ")
-
+        if saveflag=='y':
+            savename = raw_input("\tEnter custom filename (omit extension) or press enter to auto-generate filename: ")
 
         plt.figure(figsize=(10,8))
         label = str(filt+' mag')
@@ -254,14 +280,20 @@ while True:
 
        
 
-        if choice=='C':
+        if choice=='2':
             plt.title('Star at %s, %s' % (RA,DEC))
             if saveflag=='y':
-                filename = 'star_%s_%s_%s.png' % (RA,DEC,filt)
+                if savename=='':
+                    filename = 'star_%s_%s_%s.png' % (RA,DEC,filt)
+                else:
+                    filename = savename+'.png'
         else: 
             plt.title('UCAC4 %s' % choice)
             if saveflag=='y':
-                filename = 'star_%s_%s.png' % (choice,filt)
+                if savename=='':
+                    filename = 'star_%s_%s.png' % (choice,filt)
+                else:
+                    filename = savename+'.png'
         if saveflag=='y':
             plt.savefig('plots/'+filename)
             with open('plots/'+filename.replace('.png','.txt'),'w') as t:
@@ -325,6 +357,8 @@ while True:
         
 
         saveflag = raw_input("\tSave plot as file? [y/n]: ")
+        if saveflag=='y':
+            savename = raw_input("\tEnter custom filename (omit extension) or press enter to auto-generate filename: ")
         plt.figure(figsize=(10,8))
         plt.scatter(time[0], mags[0], c='r', marker='.', label='R mag')
         plt.scatter(time[1], mags[1], c='g', marker='.', label='V mag')
@@ -347,14 +381,20 @@ while True:
         plt.subplots_adjust(bottom=0.15)
 
 
-        if choice=='C':
+        if choice=='2':
             plt.title('Star at %s, %s' % (RA,DEC))
             if saveflag=='y':
-                filename = 'star_%s_%s.png' % (RA,DEC)
+                if savename=='':
+                    filename = 'star_%s_%s_all.png' % (RA,DEC)
+                else:
+                    filename = savename+'.png'
         else: 
             plt.title('UCAC4 %s' % choice)
             if saveflag=='y':
-                filename = 'star_%s' % choice
+                if savename=='':
+                    filename = 'star_%s_all.png' % choice
+                else:
+                    filename = savename+'.png'
         if saveflag=='y':
             plt.savefig('plots/'+filename)
         plt.show()
