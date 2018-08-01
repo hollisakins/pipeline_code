@@ -187,12 +187,19 @@ while True:
                 '[V] V band (visual) filter',
                 '[B] B band (blue) filter',
                 '[a] View all filter data',
+                '[b] Return back to object selection',
                 '[q] Quit the program'])
 
     printright('Choice Registered: '+filt,clear=True,delay=True)
     if filt=='q':
         print("\033c")
         sys.exit()
+    elif filt=='b':
+        print("\033c")
+        sleep(0.2)
+        header()
+        sleep(0.2)
+        continue
 
 
     if not filt=='a':
