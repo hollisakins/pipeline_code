@@ -259,6 +259,8 @@ while True:
         if saveflag=='y':
             savename = raw_input("\tEnter custom filename (omit extension) or press enter to auto-generate filename: ")
 
+        print("\t(if you're connecting remotely it may take a bit to display the plot...)")
+
         plt.figure(figsize=(10,8))
         label = str(filt+' mag')
         plt.errorbar(time, mags, c='k', label=label,yerr=error,fmt='.')
