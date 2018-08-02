@@ -254,7 +254,7 @@ class Field:
                 self.img = np.array(img,dtype='<f4')
 
     def calibrate(self,h,image): # check to see whether or not we need to calibrate the file
-        if np.size(image)==8487264 or np.size(image)==942748: # need to add number for 2x2 binning
+        if np.size(image)==8487264 or np.size(image)==2121816 or np.size(image)==942748: 
             if h['CCD-TEMP']<=self.max_temp: 
                 if h.get('CALSTAT',default=0)==0: 
                     return True # True means we calibrate
@@ -396,7 +396,7 @@ class Field:
 
         elif self.calibrate(light_h,light)=='Size':
             self.writeError('Rejected calibration, captured with subframe or non-standard binning')
-            prnt(self.filename,'Image not full size')
+            prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
 
         del flat_fits,bias_fits,dark_fits
 
