@@ -6,7 +6,7 @@ import warnings # for suppressing warnings
 import csv # for reading/writing from csv files
 import sys # for interacting with the computer, shutting down the program, etc
 import shutil # solely for copying .SRC files between directories 
-from datetime import datetime 
+from datetime import datetime,timedelta
 from time import strftime, gmtime, strptime, sleep 
 from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
 
@@ -34,6 +34,7 @@ warnings.catch_warnings()
 warnings.simplefilter('ignore')
 
 slow = False # if slow=True it will pause between printing each line just to make it easier to read, good for testing since it can go really fast
+days_old = 1
 
 # function for printing the output consistently 
 def prnt(indent,strng,filename=False,alert=False):
@@ -90,13 +91,20 @@ def makeMasters(writeOver=False):
     Opt. Argument writeOver=False can be changed to True to allow older bias & dark frames to be
     over written by more recent ones.
     '''
-    path_to_cal = 'ArchCal/'
-    dates = [f for f in os.listdir(path_to_cal) if not f.startswith('.')] # index date folders in ArchCal
-    path_to_cal += max(dates)+'/' # specify path as most recent date
-    filenames = [f for f in os.listdir(path_to_cal) if os.path.isfile(os.path.join(path_to_cal,f)) if not f.startswith('.')] # list of filenames to process
-    
     print('\033c')
     header('Making Masters')
+    path_to_cal = 'ArchCal/'
+    # dates = [f for f in os.listdir(path_to_cal) if not f.startswith('.')] # index date folders in ArchCal
+    path_to_cal += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' # specify path as previous days date
+    if not os.path.exists(path_to_cal):
+        print('\tNo calibration images found in %s' % path_to_cal)
+        sleep(1)
+        print('\tSkipping makeMasters...')
+        sleep(1.5)
+        return
+
+    filenames = [f for f in os.listdir(path_to_cal) if os.path.isfile(os.path.join(path_to_cal,f)) if not f.startswith('.')] # list of filenames to process
+    
     print('\tSearching %s for calibraton files...' % path_to_cal)
     print('\tIndexed %s files' % len(filenames))
     
@@ -281,9 +289,17 @@ class Field:
         header('Initialization') # print the header
         self.columnsWritten = True # if we need to write the columns into the sources.csv file
         ## specify source files
-        self.dates = [f for f in os.listdir(self.uncalibrated_path) if not f.startswith('.')] # index date folders in ArchSky
-        self.uncalibrated_path += max(self.dates)+'/' # specify both paths as most recent date
-        self.calibrated_path += max(self.dates)+'/' 
+        # self.dates = [f for f in os.listdir(self.uncalibrated_path) if not f.startswith('.')] # index date folders in ArchSky
+        self.uncalibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' # specify both paths as previous days date
+        self.calibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' 
+        if not os.path.exists(self.uncalibrated_path):
+            print('\tNo images found in %s' % self.uncalibrated_path)
+            sleep(1)
+            print('\tExiting...')
+            sleep(1.5)
+            print("\033c")
+            sys.exit()
+
         if not os.path.exists(self.calibrated_path):
             os.makedirs(self.calibrated_path)
         all_files = [f for f in os.listdir(self.uncalibrated_path) if os.path.isfile(os.path.join(self.uncalibrated_path,f)) and not f.startswith('.')]

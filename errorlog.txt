@@ -2,3 +2,5 @@
 2018-07-31 20:12 GMT: No bias master for binning 3x3, failed to create dark
 2018-07-31 20:12 GMT: M 29_Light_B_20180625_00000219.fits: No .SRC file found, image skipped
 2018-07-31 20:12 GMT: image_test1.fits: No WCS data found in image header, image skipped
+2018-08-02 19:22 GMT: M 29_Light_B_20180625_00000219.fits: No .SRC file found, image skipped
+2018-08-02 19:22 GMT: image_test1.fits: No WCS data found in image header, image skipped
