@@ -67,9 +67,16 @@ def prnt(indent,strng,filename=False,alert=False):
                 print(indent+': '+strng)
 
 # simple function to print a line at the top of the screen that shows what process is going on 
-def header(i):
-    print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
-    print('')
+def header(i,count=False):
+    if not count:
+        print('\033c')
+        print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
+        print('')
+    else:
+        print('\033c')
+        i = i+' '+str(count[0])+'/'+str(count[1])
+        print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
+        print('')
 
 def writeError(description):
     name = 'errorlog.txt'
@@ -91,7 +98,7 @@ def makeMasters(writeOver=False):
     Opt. Argument writeOver=False can be changed to True to allow older bias & dark frames to be
     over written by more recent ones.
     '''
-    print('\033c')
+
     header('Making Masters')
     path_to_cal = 'ArchCal/'
     # dates = [f for f in os.listdir(path_to_cal) if not f.startswith('.')] # index date folders in ArchCal
@@ -227,9 +234,13 @@ class Field:
         self.uncalibrated_path = 'ArchSky/'
         self.path_to_cal = 'MasterCal/'
         self.calibrated = False
-        self.aperture_size = 80.0
+        self.aperture_size = 30.0
         self.max_temp = -3.0
+        self.cutoff = True
     
+    def counter(self,index):
+        self.count = index
+
     def writeError(self,description):
         name = 'errorlog.txt'
         if not os.path.exists(name):
@@ -285,7 +296,7 @@ class Field:
 
     def initialize(self):
         '''Index the files we need to calibrate'''
-        print("\033c") # clear the screen
+
         header('Initialization') # print the header
         self.columnsWritten = True # if we need to write the columns into the sources.csv file
         ## specify source files
@@ -305,7 +316,7 @@ class Field:
         all_files = [f for f in os.listdir(self.uncalibrated_path) if os.path.isfile(os.path.join(self.uncalibrated_path,f)) and not f.startswith('.')]
         self.list_of_files  = [f.rstrip() for f in all_files if f.endswith('.fits') or f.endswith('.fit')]
 
-        src_files = [f for f in all_files if f.endswith('.SRC')]
+        # src_files = [f for f in all_files if f.endswith('.SRC')]
         print('\tSearching %s for sky images...' % self.uncalibrated_path)
         sleep(0.3)
         print('\tSearching %s for calibration files...' % self.path_to_cal)
@@ -313,13 +324,12 @@ class Field:
         print('\033c')
 
 
-        for filename in src_files:
-            shutil.copy(self.uncalibrated_path+filename, self.calibrated_path) # copy over SRC files since we need them later but obviously dont need to calibrate them
+        # for filename in src_files:
+        #     shutil.copy(self.uncalibrated_path+filename, self.calibrated_path) # copy over SRC files since we need them later but obviously dont need to calibrate them
 
 
     def Reduce(self):
-        print('\033c')
-        header('Calibration & Source Extraction')
+        header('Calibration & Source Extraction',count=(self.count,len(self.list_of_files)))
         
         light_h,light = self.hdr,self.img # bring up the hdr and image
         prnt(self.filename,'Successfully opened '+light_h['FILTER']+' image in '+self.uncalibrated_path,filename=True)
@@ -400,23 +410,17 @@ class Field:
 
         del flat_fits,bias_fits,dark_fits
 
-    def Source(self): # gathers source extraction data from .SRC file
-        try:
-            src = np.loadtxt(self.calibrated_path+self.filename.replace('.fits','.SRC'))
-            objects = src[:,0:2] # pixel X,Y coordinates of the objects in question
-            X_pos = src[:,0]
-            Y_pos = src[:,1]
-            fwhm = src[:,3]
-            A = src[:,8] # these last three are solely for plotting purposes
-            B = src[:,9]
-            theta = src[:,10]
-            prnt(self.filename,'Gathered source data')
-            return {'obj':objects,'X':X_pos,'Y':Y_pos,'fwhm':fwhm,'A':A,'B':B,'theta':theta} # return source data as dict
-        except IOError:
+    def Source(self):
+        hdr,img = self.hdr,self.img
 
-            return 'NOSRC'
-        except IndexError:
-            return 'NOSRC'
+        bkg = sep.Background(img)
+        bkg_data = bkg.back()
+        bkg_rms = bkg.globalrms
+
+        img = img - bkg_data
+        objects = sep.extract(img, 2, err=bkg.globalrms,minarea=60/hdr['XBINNING']/hdr['YBINNING'])
+        prnt(self.filename,'Source detection complete with %s objects' % str(len(objects)))
+        return objects
 
 
     def Convert(self): # converts obj list in pixel coordinate to RA-dec coordinates
@@ -425,10 +429,11 @@ class Field:
             test = hdr['WCSVER']
         except KeyError:
             return 'NOWCS'
+        
         w = wcs.WCS(hdr) # gets WCS matrix from the header
-        objects = self.source['obj']
-        world = w.wcs_pix2world(objects, 1) # World Coorindate System function converts matrix in fits header to RA/Dec
-        prnt(self.filename,'Converted coordinates to RA/Dec')
+        coords = zip(self.source['x'],self.source['y'])
+        world = w.wcs_pix2world(coords, 1) # World Coorindate System function converts matrix in fits header to RA/Dec
+        prnt(self.filename,'Converted source coordinates from pixel to world')
         return world
 
     def Photometry(self): 
@@ -441,58 +446,59 @@ class Field:
         fluxes,fluxerrs = [],[]
         objects = self.world 
 
-        for i in range(len(self.source['X'])):
-            if self.source['fwhm'][i]<=0:
-                prnt(self.filename,'FWHM leq zero at pixel position (%s,%s), star discarded' % (self.source['X'][i],self.source['Y'][i]),alert=True)
-                self.writeError('SRC FWHM less than or equal to 0 at pixel position (%s,%s), star discarded from aperture photometry' % (self.source['X'][i],self.source['Y'][i]))
-                objects_to_remove.append(i)
-            else:
-                # self.aperture_size = self.source['fwhm'][i]*2
-                r_in = 1.5*self.aperture_size
-                r_out = 2.0*self.aperture_size
-                flux, fluxerr, flag = sep.sum_circle(img, self.source['X'][i], self.source['Y'][i], self.aperture_size,gain=egain)
-                if not flag==0:
-                    if flag==16:
-                        prnt(self.filename,'SEP flag #%s, star too close to edge, star discarded' % str(flag),alert=True)
-                        self.writeError('Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
-                        indices_to_remove.append(i)
-                    else:
-                        prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
-                        self.writeError('Source Extractor flag #%s' % str(flag))
-                
-                # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in, r_out,gain=egain)
-                # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
-                # flux = flux - bkg_mean * (math.pi*self.aperture_size*self.aperture_size)
-                
-                annulus_values = []
-                for dx in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
-                    for dy in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
-                        if np.sqrt(dx*dx+dy*dy)>r_in and np.sqrt(dx*dx+dy*dy)<r_out:
-                            x_index = int(self.source['X'][i]+dx)
-                            y_index = int(self.source['Y'][i]+dy)
-                            try:
-                                annulus_values.append(img[y_index,x_index])
-                            except IndexError:
-                                pass
-                
+        for i in range(len(self.source)):
+            # if self.source['fwhm'][i]<=0:
+            #     prnt(self.filename,'FWHM leq zero at pixel position (%s,%s), star discarded' % (self.source['X'][i],self.source['Y'][i]),alert=True)
+            #     self.writeError('SRC FWHM less than or equal to 0 at pixel position (%s,%s), star discarded from aperture photometry' % (self.source['X'][i],self.source['Y'][i]))
+            #     objects_to_remove.append(i)
+            # else:
+
+            r_in = 1.5*self.aperture_size
+            r_out = 2.0*self.aperture_size
+            flux, fluxerr, flag = sep.sum_circle(img, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain)
+            if not flag==0:
+                if flag==16:
+                    prnt(self.filename,'SEP flag #%s, corrupted aperture data, star discarded' % str(flag),alert=True)
+                    self.writeError('Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
+                    indices_to_remove.append(i)
+                else:
+                    prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
+                    writeError('Source Extractor flag #%s' % str(flag))
+            
+            # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in, r_out,gain=egain)
+            # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
+            # flux = flux - bkg_mean * (math.pi*self.aperture_size*self.aperture_size)
+            
+            annulus_values = []
+            for dx in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
+                for dy in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
+                    if np.sqrt(dx*dx+dy*dy)>r_in and np.sqrt(dx*dx+dy*dy)<r_out:
+                        x_index = int(self.source['x'][i]+dx)
+                        y_index = int(self.source['y'][i]+dy)
+                        try:
+                            annulus_values.append(img[y_index,x_index])
+                        except IndexError:
+                            pass
+            
+            if self.cutoff:
                 q75, q25 = np.percentile(annulus_values, [75 ,25])
                 iqr = q75 - q25
                 cutoff = np.mean(annulus_values)+1.5*iqr
                 annulus_values = [a for a in annulus_values if a<=cutoff]
-                
-                bkg_mean = np.mean(annulus_values)
-                flux = flux - bkg_mean * math.pi * self.aperture_size * self.aperture_size
-                fluxerr = np.sqrt(fluxerr*fluxerr+np.sum(annulus_values))
-                fluxes.append(flux)
-                fluxerrs.append(fluxerr)
+            
+            bkg_mean = np.mean(annulus_values)
+            flux = flux - bkg_mean * math.pi * self.aperture_size * self.aperture_size
+            fluxerr = np.sqrt(fluxerr*fluxerr+np.sum(annulus_values))
+            fluxes.append(flux)
+            fluxerrs.append(fluxerr)
 
         # get flux values from source extraction package
         flux = np.array(fluxes)
 
         for j in range(len(flux)): # if background subtraction isn't working correctly you can get negative flux values
             if flux[j]<0:
-                prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['X'][j],self.source['Y'][j]),alert=True)
-                self.writeError('Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['X'][j],self.source['Y'][j]))
+                prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]),alert=True)
+                self.writeError('Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]))
                 indices_to_remove.append(j)
 
         flux = np.delete(flux, (indices_to_remove), axis=0)
@@ -623,8 +629,8 @@ class Field:
         sleep(3)
         print(' ')
         sleep(1)
-        print("\033c")
-        header('Calibration & Source Extraction')
+
+        header('Calibration & Source Extraction',count=(self.count,len(self.list_of_files)))
         
         return output
 
@@ -647,10 +653,10 @@ class Field:
         overlay[1].set_axislabel('Declination (J2000)')
 
         # plot an ellipse for each object
-        for i in range(len(self.source['X'])):
-            e = Ellipse(xy=(self.source['X'][i], self.source['Y'][i]),
-                        width=6*self.source['A'][i],
-                        height=6*self.source['B'][i],
+        for i in range(len(self.source['x'])):
+            e = Ellipse(xy=(self.source['x'][i], self.source['y'][i]),
+                        width=6*self.source['a'][i],
+                        height=6*self.source['b'][i],
                         angle=self.source['theta'][i])
             e.set_facecolor('none')
             e.set_edgecolor('red')
@@ -673,17 +679,12 @@ class Field:
    
     def Extract(self):
         self.source = self.Source()
-        if self.source == 'NOSRC':
-            prnt(self.filename,'No .SRC file exists for this image, skipping...',alert=True)
-            self.writeError('No .SRC file found, image skipped')
+        self.world = self.Convert()
+        if self.world =='NOWCS':
+            prnt(self.filename,'No WCS data exists in the header for this image, skipping...',alert = True)
+            self.writeError('No WCS data found in image header, image skipped')
             sleep(2)
         else:
-            self.world = self.Convert()
-            if self.world =='NOWCS':
-                prnt(self.filename,'No WCS data exists in the header for this image, skipping...',alert = True)
-                self.writeError('No WCS data found in image header, image skipped')
-                sleep(2)
-            else:
-                self.output = self.Photometry()
-                self.writeData()
+            self.output = self.Photometry()
+            self.writeData()
 
