@@ -69,12 +69,11 @@ def prnt(indent,strng,filename=False,alert=False):
 
 # simple function to print a line at the top of the screen that shows what process is going on 
 def header(i,count=False):
+    print('\033c')
     if not count:
-        print('\033c')
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
         print('')
     else:
-        print('\033c')
         i = i+' '+str(count[0])+'/'+str(count[1])
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
         print('')
@@ -90,6 +89,48 @@ def writeError(description):
         erlog.write(description)
 
 
+def dailyCopy(overwrite=False):
+    header('Copying Files')
+    copys = ['Calibration/','SkyImages/']
+    archives = ['ArchCal/','ArchSky/']
+
+    for i in range(2):
+        print('\tCopying from %s ' % copys[i])
+        sleep(0.8)
+        all_dates = [f for f in os.listdir(copys[i]) if not f.startswith('.') and not os.path.isfile(f)]
+        recent_dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
+        dates = list(set(all_dates) & set(recent_dates))
+
+        dates_src = [copys[i]+date+'/' for date in dates]
+        dates_dst = [archives[i]+date+'/' for date in dates]
+
+        for j in range(len(dates_src)):
+            try:
+                shutil.copytree(dates_src[j],dates_dst[j])
+            except:
+                if overwrite:
+                    if os.path.exists(dates_dst[j]):
+                        shutil.rmtree(dates_dst[j])
+                        shutil.copytree(dates_src[j], dates_dst[j])
+                    print('\tDirectory %s already exists, overwriting' % dates_dst[j])
+                else:
+                    print('\tDirectory %s already exists, skipping' % dates_dst[j])
+                    writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
+            else:
+                print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
+                writeError('     Copied dir %s to %s' % (dates_src[j],dates_dst[j]))
+        sleep(0.8)
+        print('\tComplete')
+        sleep(1)
+        print('')
+
+
+
+
+
+
+
+
 def makeMasters(writeOver=False):
     '''Index calibration files and generate masters. 
 
@@ -100,132 +141,143 @@ def makeMasters(writeOver=False):
     over written by more recent ones.
     '''
 
-    header('Making Masters')
-    path_to_cal = 'ArchCal/'
-    # dates = [f for f in os.listdir(path_to_cal) if not f.startswith('.')] # index date folders in ArchCal
-    path_to_cal += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' # specify path as previous days date
-    if not os.path.exists(path_to_cal):
-        print('\tNo calibration images found in %s' % path_to_cal)
-        sleep(1)
-        print('\tSkipping makeMasters...')
-        writeError('     No new calibration files, skipped makeMasters')
-        sleep(1.5)
-        return
+    dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
+    dates = ['ArchCal/'+date+'/' for date in dates]
 
-    filenames = [f for f in os.listdir(path_to_cal) if os.path.isfile(os.path.join(path_to_cal,f)) if not f.startswith('.')] # list of filenames to process
-    
-    print('\tSearching %s for calibraton files...' % path_to_cal)
-    print('\tIndexed %s files' % len(filenames))
-    binnings = ['1','2','3','4']
+    for path_to_cal in dates:
+        header('Making Masters')
 
-    bias1,dark1,Red1,Green1,Blue1,R1,V1,B1,Halpha1,Lum1,filters1 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-    bias2,dark2,Red2,Green2,Blue2,R2,V2,B2,Halpha2,Lum2,filters2 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-    bias3,dark3,Red3,Green3,Blue3,R3,V3,B3,Halpha3,Lum3,filters3 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-    bias4,dark4,Red4,Green4,Blue4,R4,V4,B4,Halpha4,Lum4,filters4 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-    # lists are used to store the filename for each calibration file and then combine into a master
+        if not os.path.exists(path_to_cal):
+            sleep(0.5)
+            print('\tNo calibration date folder found %s' % path_to_cal)
+            sleep(1)
+            print('\tSkipping makeMasters for this date...')
+            writeError('     in makeMasters: No path found at %s, skipped makeMasters for this date' % path_to_cal)
+            sleep(1.5)
+            continue
 
-    print('\tSorting files...')
+        filenames = [f for f in os.listdir(path_to_cal) if os.path.isfile(os.path.join(path_to_cal,f)) if not f.startswith('.')] # list of filenames to process
+        if len(filenames)==0:
+            sleep(0.5)
+            print('\tNo images in %s' % path_to_cal)
+            sleep(1)
+            print('\tSkipping makeMasters for this date')
+            sleep(1.5)
+            writeError('     in makeMasters: No images in %s, skipped makeMasters' % path_to_cal)
+            continue
 
-    # sort the calibration images by type and store them in arrays
-    for filename in filenames:
-        with fits.open(path_to_cal+filename) as hdulist: 
-            hdr = hdulist[0].header
-            typ = hdr['IMAGETYP'] # save image type as variable
-            binn = hdr['XBINNING'] # save binning as variable
-            if typ=='Bias Frame':
-                exec('bias'+str(binn)+'_header=hdr') # save the header to write back into the master
-                exec('bias'+str(binn)+'.append(filename)') # add the data to the list with respective type/binning
-            if typ=='Dark Frame':
-                exec('dark'+str(binn)+'_header=hdr')
-                exec('dark'+str(binn)+'.append(filename)')
-            if typ=='Flat Field':
-                exec(hdr['FILTER']+str(binn)+'_header=hdr')
-                exec('filters'+str(binn)+".append(hdr['FILTER'])") # store the filters found in this directory in a list
-                # so that we don't attempt to create new master flats with filters we did not have raw flats for
-                exec(hdr['FILTER']+str(binn)+'.append(filename)') 
+        print('\tSearching %s for calibraton files...' % path_to_cal)
+        print('\tIndexed %s files' % len(filenames))
+        binnings = ['1','2','3','4']
 
+        bias1,dark1,Red1,Green1,Blue1,R1,V1,B1,Halpha1,Lum1,filters1 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
+        bias2,dark2,Red2,Green2,Blue2,R2,V2,B2,Halpha2,Lum2,filters2 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
+        bias3,dark3,Red3,Green3,Blue3,R3,V3,B3,Halpha3,Lum3,filters3 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
+        bias4,dark4,Red4,Green4,Blue4,R4,V4,B4,Halpha4,Lum4,filters4 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
+        # lists are used to store the filename for each calibration file and then combine into a master
 
-    print('')
-    print('\tIndexed files:        Binning1x1  Binning2x2  Binning3x3  Binning4x4')
-    print('\t\tBias:             %s          %s          %s          %s' % (len(bias1),len(bias2),len(bias3),len(bias4)))
-    print('\t\tDark:             %s          %s          %s          %s' % (len(dark1),len(dark2),len(dark3),len(dark4)))
-    print('\t\tRed Flat:         %s          %s          %s          %s' % (len(Red1),len(Red2),len(Red3),len(Red4)))
-    print('\t\tGreen Flat:       %s          %s          %s          %s' % (len(Green1),len(Green2),len(Green3),len(Green4)))
-    print('\t\tBlue Flat:        %s          %s          %s          %s' % (len(Blue1),len(Blue2),len(Blue3),len(Blue4)))
-    print('\t\tR Flat:           %s          %s          %s          %s' % (len(R1),len(R2),len(R3),len(R4)))
-    print('\t\tV Flat:           %s          %s          %s          %s' % (len(V1),len(V2),len(V3),len(V4)))
-    print('\t\tB Flat:           %s          %s          %s          %s' % (len(B1),len(B2),len(B3),len(B4)))
-    print('\t\tHalpha Flat:      %s          %s          %s          %s' % (len(Halpha1),len(Halpha2),len(Halpha3),len(Halpha4)))
-    print('\t\tLum Flat:         %s          %s          %s          %s' % (len(Lum1),len(Lum2),len(Lum3),len(Lum4)))
-    print('')
+        print('\tSorting files...')
+
+        # sort the calibration images by type and store them in arrays
+        for filename in filenames:
+            with fits.open(path_to_cal+filename) as hdulist: 
+                hdr = hdulist[0].header
+                typ = hdr['IMAGETYP'] # save image type as variable
+                binn = hdr['XBINNING'] # save binning as variable
+                if typ=='Bias Frame':
+                    exec('bias'+str(binn)+'_header=hdr') # save the header to write back into the master
+                    exec('bias'+str(binn)+'.append(filename)') # add the data to the list with respective type/binning
+                if typ=='Dark Frame':
+                    exec('dark'+str(binn)+'_header=hdr')
+                    exec('dark'+str(binn)+'.append(filename)')
+                if typ=='Flat Field':
+                    exec(hdr['FILTER']+str(binn)+'_header=hdr')
+                    exec('filters'+str(binn)+".append(hdr['FILTER'])") # store the filters found in this directory in a list
+                    # so that we don't attempt to create new master flats with filters we did not have raw flats for
+                    exec(hdr['FILTER']+str(binn)+'.append(filename)') 
 
 
+        print('')
+        print('\tIndexed files:        Binning1x1  Binning2x2  Binning3x3  Binning4x4')
+        print('\t\tBias:             %s          %s          %s          %s' % (len(bias1),len(bias2),len(bias3),len(bias4)))
+        print('\t\tDark:             %s          %s          %s          %s' % (len(dark1),len(dark2),len(dark3),len(dark4)))
+        print('\t\tRed Flat:         %s          %s          %s          %s' % (len(Red1),len(Red2),len(Red3),len(Red4)))
+        print('\t\tGreen Flat:       %s          %s          %s          %s' % (len(Green1),len(Green2),len(Green3),len(Green4)))
+        print('\t\tBlue Flat:        %s          %s          %s          %s' % (len(Blue1),len(Blue2),len(Blue3),len(Blue4)))
+        print('\t\tR Flat:           %s          %s          %s          %s' % (len(R1),len(R2),len(R3),len(R4)))
+        print('\t\tV Flat:           %s          %s          %s          %s' % (len(V1),len(V2),len(V3),len(V4)))
+        print('\t\tB Flat:           %s          %s          %s          %s' % (len(B1),len(B2),len(B3),len(B4)))
+        print('\t\tHalpha Flat:      %s          %s          %s          %s' % (len(Halpha1),len(Halpha2),len(Halpha3),len(Halpha4)))
+        print('\t\tLum Flat:         %s          %s          %s          %s' % (len(Lum1),len(Lum2),len(Lum3),len(Lum4)))
+        print('')
 
-    ## make the masters
-    for i in binnings: # for each binning factor 
-        exec('s=np.size(bias'+i+')') # define var s as the size of the list
-        if not s==0: # if the size is nonzero, there is data for that type & binning
-            exec('filenames = bias'+i)
-            master = []
-            for filename in filenames:
-                with fits.open(path_to_cal+filename) as hdulist:
-                    img = hdulist[0].data
-                    master.append(img)
-            exec('bias'+i+'_master=np.median(np.array(master),axis=0)') # define bias master as the 
-            print('\tConstructed a master bias with binning %sx%s' % (i,i))
 
-    for i in binnings:
-        exec('s=np.size(dark'+i+')')
-        if not s==0:
-            try: # try to  make dark master
-                exec('filenames = dark'+i)
+
+        ## make the masters
+        for i in binnings: # for each binning factor 
+            exec('s=np.size(bias'+i+')') # define var s as the size of the list
+            if not s==0: # if the size is nonzero, there is data for that type & binning
+                exec('filenames = bias'+i)
                 master = []
                 for filename in filenames:
                     with fits.open(path_to_cal+filename) as hdulist:
                         img = hdulist[0].data
                         master.append(img)
-                exec('dark'+i+'_master=np.median(np.array(master)-bias'+i+'_master,axis=0)') # make dark master by removing the bias first
-                print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
-            except NameError: # if you get a NameError:
-                print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i))
-                writeError('     No bias master for binning %sx%s, failed to create dark' % (i,i))
+                exec('bias'+i+'_master=np.median(np.array(master),axis=0)') # define bias master as the 
+                print('\tConstructed a master bias with binning %sx%s' % (i,i))
 
-    for j in binnings: 
-        exec('f=np.unique(filters'+j+')') # establish unique filters 
-        for i in f: # for each UNIQUE filter
-            exec('s=np.size('+i+j+')')
-            if not s==0: 
-                exec('filenames = '+i+j)
-                master = []
-                for filename in filenames:
-                    with fits.open(path_to_cal+filename) as hdulist:
-                        img = hdulist[0].data
-                        master.append(img)
-                exec(i+j+"_master = np.median(master,axis=0)/np.max(np.median(master,axis=0))")  # normalize flat field and make master
-                print('\tConstructed master %s flat with binning %sx%s' % (i,j,j))
-    
+        for i in binnings:
+            exec('s=np.size(dark'+i+')')
+            if not s==0:
+                try: # try to  make dark master
+                    exec('filenames = dark'+i)
+                    master = []
+                    for filename in filenames:
+                        with fits.open(path_to_cal+filename) as hdulist:
+                            img = hdulist[0].data
+                            master.append(img)
+                    exec('dark'+i+'_master=np.median(np.array(master)-bias'+i+'_master,axis=0)') # make dark master by removing the bias first
+                    print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
+                except NameError: # if you get a NameError:
+                    print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i))
+                    writeError('     in makeMasters: No bias master for binning %sx%s, failed to create dark' % (i,i))
 
-    # write the masters to fits files
-    for i in binnings:
-        for j in ['bias','dark']: # for now: do not overwrite old bias / dark masters
-            if j+i+'_master' in locals():
-                try:
-                    code = "fits.writeto('MasterCal/binning"+i+'/'+j+"_master.fit',"+j+i+'_master, header='+j+i+'_header,overwrite='+str(writeOver)+')'
-                    exec(code)
-                    print('\tWrote master %s to file MasterCal/binning%s/%s_master.fit' % (j,i,j))   
-                except:
-                    print('\tBias or dark master already exists, no new file written')
+        for j in binnings: 
+            exec('f=np.unique(filters'+j+')') # establish unique filters 
+            for i in f: # for each UNIQUE filter
+                exec('s=np.size('+i+j+')')
+                if not s==0: 
+                    exec('filenames = '+i+j)
+                    master = []
+                    for filename in filenames:
+                        with fits.open(path_to_cal+filename) as hdulist:
+                            img = hdulist[0].data
+                            master.append(img)
+                    exec(i+j+"_master = np.median(master,axis=0)/np.max(np.median(master,axis=0))")  # normalize flat field and make master
+                    print('\tConstructed master %s flat with binning %sx%s' % (i,j,j))
+        
 
-    for i in ['1','2','3','4']:
-        exec('f=np.unique(filters'+i+')')
-        for j in f: # only overwrite flats for the unique filters that we chose to update that night
-            code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite=True)"
-            exec(code)   
-            print('\tWrote master %s flat to file MasterCal/binning%s/flat_master_%s.fit' % (j,i,j))
-    
-    print('\n\tComplete')
-    sleep(3)
-    print('\033c')
+        # write the masters to fits files
+        for i in binnings:
+            for j in ['bias','dark']: # for now: do not overwrite old bias / dark masters
+                if j+i+'_master' in locals():
+                    try:
+                        code = "fits.writeto('MasterCal/binning"+i+'/'+j+"_master.fit',"+j+i+'_master, header='+j+i+'_header,overwrite='+str(writeOver)+')'
+                        exec(code)
+                        print('\tWrote master %s to file MasterCal/binning%s/%s_master.fit' % (j,i,j))   
+                    except:
+                        print('\tBias or dark master already exists, no new file written')
+
+        for i in ['1','2','3','4']:
+            exec('f=np.unique(filters'+i+')')
+            for j in f: # only overwrite flats for the unique filters that we chose to update that night
+                code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite=True)"
+                exec(code)   
+                print('\tWrote master %s flat to file MasterCal/binning%s/flat_master_%s.fit' % (j,i,j))
+        
+        print('\n\tComplete')
+        sleep(3)
+        print('\033c')
 
 
 
@@ -266,15 +318,16 @@ class Field:
             erlog.write(description)
 
 
-    def Initialize(self):
+    def Initialize(self,day):
         '''Index the files we need to calibrate -- must be run before other methods such as Reduce(), Extract(), etc.'''
-
+        self.calibrated_path = 'Calibrated Images/'
+        self.uncalibrated_path = 'ArchSky/'
         header('Initialization') # print the header
         self.columnsWritten = True # if we need to write the columns into the sources.csv file
         
-        # update paths with yesterdays date
-        self.uncalibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' # specify both paths as previous days date
-        self.calibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' 
+        dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
+        self.uncalibrated_path = [self.uncalibrated_path+date+'/' for date in dates][day]
+        self.calibrated_path = [self.calibrated_path+date+'/' for date in dates][day]
         
         # if no path for uncalibrated images, exit
         if not os.path.exists(self.uncalibrated_path):
@@ -283,7 +336,7 @@ class Field:
             print('\tExiting...')
             sleep(1.5)
             print("\033c")
-            writeError('     Path %s does not exist, exiting pipeline run for today' % self.uncalibrated_path)
+            writeError('     in Initialize: Path %s does not exist, exiting pipeline run for today' % self.uncalibrated_path)
             sys.exit()
 
         # if no path for calibrated images, make one
@@ -297,9 +350,9 @@ class Field:
 
         # src_files = [f for f in all_files if f.endswith('.SRC')]
         print('\tSearching %s for sky images...' % self.uncalibrated_path)
-        sleep(0.3)
+        sleep(1)
         print('\tSearching %s for calibration files...' % self.path_to_masters)
-        sleep(0.3)
+        sleep(1)
         print('\033c')
 
     def checkCalibration(self,h,image): # check to see whether or not we need to calibrate the file
@@ -345,7 +398,7 @@ class Field:
             prnt(self.filename,'Successfully opened bias master %s' % self.path_to_masters+'bias_master.fit')
         except: # if you encounter error
             prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit. Wrote to DR_errorlog.txt')
-            self.writeError('     Missing bias master in %s. Data reduction halted' % self.path_to_masters)
+            self.writeError('     in Reduce: Missing bias master in %s. Data reduction halted' % self.path_to_masters)
             sys.exit() # exit the program since you can't calibrate files without a bias frame
 
         bias_h = bias_fits[0].header # split into header and data
@@ -357,7 +410,7 @@ class Field:
             prnt(self.filename,'Successfully opened dark master %s' % self.path_to_masters+'dark_master.fit')
         except:
             prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit. Wrote to DR_errorlog.txt')
-            self.writeError('     Missing dark master in %s. Data reduction halted' % self.path_to_masters)
+            self.writeError('     in Reduce: Missing dark master in %s. Data reduction halted' % self.path_to_masters)
             sys.exit()
 
         dark_h = dark_fits[0].header
@@ -372,7 +425,7 @@ class Field:
             prnt(self.filename,'Successfully opened '+self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
         except:
             prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit. Wrote to DR_errorlog.txt')
-            self.writeError('     Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_masters))
+            self.writeError('     in Reduce: Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_masters))
             sys.exit()
         
         flat_h = flat_fits[0].header
@@ -400,16 +453,16 @@ class Field:
 
 
         elif self.checkCalibration(light_h,light)=='Redundant': # if it was already calibrated
-            self.writeError('     Attempted redundant calibration')
+            self.writeError('     in Reduce: Attempted redundant calibration')
             prnt(self.filename,'Image already calibrated')
             self.saveFits(light_h, light,self.filename) # still save the file because we can still use it
 
         elif self.checkCalibration(light_h,light)=='Temp': # if its temp is wrong
-            self.writeError('     Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
+            self.writeError('     in Reduce: Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
             prnt(self.filename,'Image taken at > '+str(self.max_temp)+' degrees C')
 
         elif self.checkCalibration(light_h,light)=='Size':
-            self.writeError('     Rejected calibration, captured with subframe or non-standard binning')
+            self.writeError('     in Reduce: Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
 
         del flat_fits,bias_fits,dark_fits
@@ -464,12 +517,12 @@ class Field:
                 if flag==16:
                     prnt(self.filename,'SEP flag #%s, corrupted aperture data, star discarded' % str(flag),alert=True)
                     if verbose_errors:
-                        self.writeError('     Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
+                        self.writeError('     in Photometry: Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
                     indices_to_remove.append(i)
                 else:
                     prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
                     if verbose_errors:
-                        writeError('     Source Extractor flag #%s' % str(flag))
+                        writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
             
             # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in, r_out,gain=egain)
             # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
@@ -505,7 +558,7 @@ class Field:
             if flux[j]<0:
                 prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]),alert=True)
                 if verbose_errors:
-                    self.writeError('     Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]))
+                    self.writeError('     in Photometry: Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]))
                 indices_to_remove.append(j)
 
         flux = np.delete(flux, (indices_to_remove), axis=0)
@@ -521,7 +574,8 @@ class Field:
         print('')
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
         if not len(flux)==len(objects):
-            self.writeError('     Number objects and fluxes do not match, resulting data is unreliable')
+            self.writeError('     in Photometry: Number objects and fluxes do not match, resulting data is unreliable')
+            raise Exception('Number object and fluxes do not match, resulting data not reliable. System exited')
 
         ### retrieve magnitudes from catalog
         time = hdr['DATE-OBS'] # time image was taken
@@ -611,7 +665,7 @@ class Field:
 	
         cmags_nonan = [k for k in cmags if not math.isnan(float(k))] # get rid of the nan values 
         if not len(instmags_to_median)==len(cmags_nonan): # the two lists above must be the same length to gaurantee that we are using the same stars for offset calculation
-            self.writeError('     Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
+            self.writeError('     in Photometry: Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
             raise Exception('Catalog comparison list not same length as instrumental magnitude list')
 
         d = np.array(cmags_nonan) - np.array(instmags_to_median) # calculate the differences for each star
