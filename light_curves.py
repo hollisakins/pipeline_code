@@ -276,12 +276,13 @@ while True:
         possible_comparison_ids = []
         imgname_comparison = [sources['IMGNAME'][x] for x in indices][0]
         for j in range(len(sources['id'])):
-            if abs(sources['MAG_'+filt][j]-mag)<1 and abs(sources['RA_M'][j]-RA_comparison)<0.2 and abs(sources['DEC_M'][j]-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
+            if not sources['MAG_'+filt][j]=='---' and abs(float(sources['MAG_'+filt][j])-mag)<1 and abs(float(sources['RA_M'][j])-RA_comparison)<0.2 and abs(float(sources['DEC_M'][j])-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
                 possible_comparison_ids.append(sources['id'][j])
         possible_comparison_ids = np.unique(possible_comparison_ids)
         for j in range(len(possible_comparison_ids)):
-            print('\t%s: %s, mag %s, N=%s' % (j+1,possible_comparison_ids[j],np.mean(sources['MAG_'+filt][j]),len(np.nonzero(sources['id']==possible_comparison_ids[j])[0])))
-        print('')
+            possible_indices = np.nonzero(sources['id']==possible_comparison_ids[j])[0]
+	    print('\t%s: %s, mag %s, N=%s' % (j+1,possible_comparison_ids[j],round(np.mean([float(sources['MAG_'+filt][x]) for x in possible_indices]),2),len(possible_indices)))
+	print('')
         comparisonid = raw_input('\tComparison star selction (or enter for no comparison star): ')
 
         saveflag = raw_input("\tSave plot as file? (will also save summary statistics to .txt file [y/n]: ")
