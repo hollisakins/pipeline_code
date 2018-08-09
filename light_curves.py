@@ -186,6 +186,8 @@ while True:
         indices = np.nonzero(sources['id']==choice)[0]
         printright('%s data points found' % len(indices),delay=True)
 
+
+
     filt = options('Optical Filter Choice (selecting all filter data does not yield as much information as viewing a single filter at a time): ',
                 ['[R] R band (red) fitler',
                 '[V] V band (visual) filter',
@@ -243,8 +245,18 @@ while True:
             error.append(sources['MAG_err'][x])
             time.append(datetime.strptime(sources['DATETIME'][x], '%Y-%m-%d %H:%M:%S.%f'))
 
-        mags = [float(mags[x]) for x in range(len(mags)) if not math.isnan(float(mags[x]))]
-
+        try:
+            mags = [float(mags[x]) for x in range(len(mags)) if not math.isnan(float(mags[x]))]
+        except ValueError:
+            print('\tNo %s magnitude data found' % filt)
+            sleep(0.5)
+            print('\tReturning to Star Lookup')
+            sleep(2.5)
+            print("\033c")
+            sleep(0.5)
+            header()
+            sleep(0.5)
+            continue
         error = [float(error[x]) for x in range(len(error)) if not math.isnan(float(error[x]))]
         try:
             time = [time[x] for x in range(len(time)) if not math.isnan(float(mags[x]))]
@@ -258,6 +270,19 @@ while True:
             header()
             sleep(0.5)
             continue
+        mag = np.mean(mags)
+        RA_comparison = np.mean([sources['RA_M'][x] for x in indices])
+        DEC_comparison = np.mean([sources['DEC_M'][x] for x in indices])
+        possible_comparison_ids = []
+        imgname_comparison = [sources['IMGNAME'][x] for x in indices][0]
+        for j in range(len(sources['id'])):
+            if abs(sources['MAG_'+filt][j]-mag)<1 and abs(sources['RA_M'][j]-RA_comparison)<0.2 and abs(sources['DEC_M'][j]-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
+                possible_comparison_ids.append(sources['id'][j])
+        possible_comparison_ids = np.unique(possible_comparison_ids)
+        for j in range(len(possible_comparison_ids)):
+            print('\t%s: %s, mag %s, N=%s' % (j+1,possible_comparison_ids[j],np.mean(sources['MAG_'+filt][j]),len(np.nonzero(sources['id']==possible_comparison_ids[j])[0])))
+        print('')
+        comparisonid = raw_input('\tComparison star selction (or enter for no comparison star): ')
 
         saveflag = raw_input("\tSave plot as file? (will also save summary statistics to .txt file [y/n]: ")
         if saveflag=='y':
@@ -267,8 +292,34 @@ while True:
 
         plt.figure(figsize=(10,8))
         label = str(filt+' mag')
+        # data
         plt.errorbar(time, mags, c='k', label=label,yerr=error,fmt='.')
-        
+        # comparison
+        if not comparisonid=='':
+            comparisonid = possible_comparison_ids[int(comparisonid)-1]
+            comparison_indices = np.nonzero(sources['id']==comparisonid)[0]
+            mags_comparison,error_comparison,time_comparison = [],[],[]
+            for x in comparison_indices:
+                mags_comparison.append(sources['MAG_'+filt][x])
+                error_comparison.append(sources['MAG_err'][x])
+                time_comparison.append(datetime.strptime(sources['DATETIME'][x], '%Y-%m-%d %H:%M:%S.%f'))
+
+            mags_comparison = [float(mags_comparison[x]) for x in range(len(mags_comparison)) if not math.isnan(float(mags_comparison[x]))]
+
+            error_comparison = [float(error_comparison[x]) for x in range(len(error_comparison)) if not math.isnan(float(error_comparison[x]))]
+            try:
+                time_comparison = [time_comparison[x] for x in range(len(time_comparison)) if not math.isnan(float(mags_comparison[x]))]
+            except IndexError:
+                print('\tNo %s magnitude data found' % filt)
+                sleep(0.5)
+                print('\tReturning to Star Lookup')
+                sleep(2.5)
+                print("\033c")
+                sleep(0.5)
+                header()
+                sleep(0.5)
+                continue
+        plt.errorbar(time_comparison,mags_comparison,c='m',label='Comparison star %s %s mag' % (comparisonid,filt),yerr = error_comparison,fmt='.')
         duration = end - start
         date_list = [start + timedelta(seconds=x) for x in range(0, int(duration.total_seconds()))]
         cmag = np.mean([float(sources['CMAG_'+filt][c]) for c in indices])
