@@ -35,6 +35,7 @@ warnings.simplefilter('ignore')
 
 slow = False # if slow=True it will pause between printing each line just to make it easier to read, good for testing since it can go really fast
 days_old = 1
+verbose_errors = False
 
 # function for printing the output consistently 
 def prnt(indent,strng,filename=False,alert=False):
@@ -107,6 +108,7 @@ def makeMasters(writeOver=False):
         print('\tNo calibration images found in %s' % path_to_cal)
         sleep(1)
         print('\tSkipping makeMasters...')
+        writeError('     No new calibration files, skipped makeMasters')
         sleep(1.5)
         return
 
@@ -114,13 +116,13 @@ def makeMasters(writeOver=False):
     
     print('\tSearching %s for calibraton files...' % path_to_cal)
     print('\tIndexed %s files' % len(filenames))
-    
+    binnings = ['1','2','3','4']
+
     bias1,dark1,Red1,Green1,Blue1,R1,V1,B1,Halpha1,Lum1,filters1 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
     bias2,dark2,Red2,Green2,Blue2,R2,V2,B2,Halpha2,Lum2,filters2 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
     bias3,dark3,Red3,Green3,Blue3,R3,V3,B3,Halpha3,Lum3,filters3 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
     bias4,dark4,Red4,Green4,Blue4,R4,V4,B4,Halpha4,Lum4,filters4 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-    # lists are used to store the data for each calibration file and then combine into a master
-    # each element in these lists will be a NxN numpy array of the fits data
+    # lists are used to store the filename for each calibration file and then combine into a master
 
     print('\tSorting files...')
 
@@ -160,7 +162,7 @@ def makeMasters(writeOver=False):
 
 
     ## make the masters
-    for i in ['1','2','3','4']: # for each binning factor 
+    for i in binnings: # for each binning factor 
         exec('s=np.size(bias'+i+')') # define var s as the size of the list
         if not s==0: # if the size is nonzero, there is data for that type & binning
             exec('filenames = bias'+i)
@@ -172,7 +174,7 @@ def makeMasters(writeOver=False):
             exec('bias'+i+'_master=np.median(np.array(master),axis=0)') # define bias master as the 
             print('\tConstructed a master bias with binning %sx%s' % (i,i))
 
-    for i in ['1','2','3','4']:
+    for i in binnings:
         exec('s=np.size(dark'+i+')')
         if not s==0:
             try: # try to  make dark master
@@ -186,9 +188,9 @@ def makeMasters(writeOver=False):
                 print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
             except NameError: # if you get a NameError:
                 print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i))
-                writeError('No bias master for binning %sx%s, failed to create dark' % (i,i))
+                writeError('     No bias master for binning %sx%s, failed to create dark' % (i,i))
 
-    for j in ['1','2','3','4']: 
+    for j in binnings: 
         exec('f=np.unique(filters'+j+')') # establish unique filters 
         for i in f: # for each UNIQUE filter
             exec('s=np.size('+i+j+')')
@@ -204,7 +206,7 @@ def makeMasters(writeOver=False):
     
 
     # write the masters to fits files
-    for i in ['1','2','3','4']:
+    for i in binnings:
         for j in ['bias','dark']: # for now: do not overwrite old bias / dark masters
             if j+i+'_master' in locals():
                 try:
@@ -232,24 +234,13 @@ class Field:
         # when a Field object is created, define some variables
         self.calibrated_path = 'Calibrated Images/' 
         self.uncalibrated_path = 'ArchSky/'
-        self.path_to_cal = 'MasterCal/'
-        self.calibrated = False
+        self.path_to_masters = 'MasterCal/'
+        self.isCalibrated = False
         self.aperture_size = 30.0
         self.max_temp = -3.0
         self.cutoff = True
+        self.counter = 0
     
-    def counter(self,index):
-        self.count = index
-
-    def writeError(self,description):
-        name = 'errorlog.txt'
-        if not os.path.exists(name):
-            with open(name,'w') as erlog:
-                pass
-        with open(name,'a') as erlog:
-            time = strftime("%Y-%m-%d %H:%M GMT", gmtime())
-            description = time+': '+self.filename+': '+description+'\n'
-            erlog.write(description)
 
     def openFits(self,filename,calibrated=False):
         self.filename = filename
@@ -264,7 +255,54 @@ class Field:
                 img = hdulist[0].data
                 self.img = np.array(img,dtype='<f4')
 
-    def calibrate(self,h,image): # check to see whether or not we need to calibrate the file
+    def writeError(self,description):
+        name = 'errorlog.txt'
+        if not os.path.exists(name):
+            with open(name,'w') as erlog:
+                pass
+        with open(name,'a') as erlog:
+            time = strftime("%Y-%m-%d %H:%M GMT", gmtime())
+            description = time+':      '+self.filename+': '+description.strip()+'\n'
+            erlog.write(description)
+
+
+    def Initialize(self):
+        '''Index the files we need to calibrate -- must be run before other methods such as Reduce(), Extract(), etc.'''
+
+        header('Initialization') # print the header
+        self.columnsWritten = True # if we need to write the columns into the sources.csv file
+        
+        # update paths with yesterdays date
+        self.uncalibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' # specify both paths as previous days date
+        self.calibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' 
+        
+        # if no path for uncalibrated images, exit
+        if not os.path.exists(self.uncalibrated_path):
+            print('\tNo images found in %s' % self.uncalibrated_path)
+            sleep(1)
+            print('\tExiting...')
+            sleep(1.5)
+            print("\033c")
+            writeError('     Path %s does not exist, exiting pipeline run for today' % self.uncalibrated_path)
+            sys.exit()
+
+        # if no path for calibrated images, make one
+        if not os.path.exists(self.calibrated_path):
+            os.makedirs(self.calibrated_path)
+
+
+        # all_files = [f for f in os.listdir(self.uncalibrated_path) if os.path.isfile(os.path.join(self.uncalibrated_path,f)) and not f.startswith('.')]
+        self.list_of_files = [f.strip() for f in os.listdir(self.uncalibrated_path) if  not f.startswith('.') and os.path.isfile(os.path.join(self.uncalibrated_path,f)) and f.endswith('.fits') or f.endswith('.fit')]
+        # self.list_of_files  = [f.strip() for f in all_files if f.endswith('.fits') or f.endswith('.fit')]
+
+        # src_files = [f for f in all_files if f.endswith('.SRC')]
+        print('\tSearching %s for sky images...' % self.uncalibrated_path)
+        sleep(0.3)
+        print('\tSearching %s for calibration files...' % self.path_to_masters)
+        sleep(0.3)
+        print('\033c')
+
+    def checkCalibration(self,h,image): # check to see whether or not we need to calibrate the file
         if np.size(image)==8487264 or np.size(image)==2121816 or np.size(image)==942748: 
             if h['CCD-TEMP']<=self.max_temp: 
                 if h.get('CALSTAT',default=0)==0: 
@@ -278,70 +316,36 @@ class Field:
         else:
             return 'Size'
 
-    @staticmethod
-    def write_to_header(head):
-        if head.get('CALSTAT',default=0)==0: # if there is no calstat field in the header
-            head.append(('CALSTAT','BDF','Status of Calibration')) # add one
+    def writeToHeader(self,h):
+        if h.get('CALSTAT',default=0)==0: # if there is no calstat field in the header
+            h.append(('CALSTAT','BDF','Status of Calibration')) # add one
         else:
-            head['CALSTAT']='BDF' # otherwise set the value of calstat to BDF
+            h['CALSTAT']='BDF' # otherwise set the value of calstat to BDF
 
-    def save_file(self,head,data,filename):
+    def saveFits(self,h,data,filename):
         if not os.path.exists(self.calibrated_path): 
             os.makedirs(self.calibrated_path) # make a directory if there isnt one
         
-        fits.writeto(self.calibrated_path+filename.replace(".fit","_calibrated.fit"),data,head,overwrite=True)
+        fits.writeto(self.calibrated_path+filename.replace(".fit","_calibrated.fit"),data,h,overwrite=True)
         prnt(self.filename,'Wrote file to '+self.calibrated_path)
         print(' ')
-        self.calibrated = True # now its calibrated so we change this variable to True
-
-    def initialize(self):
-        '''Index the files we need to calibrate'''
-
-        header('Initialization') # print the header
-        self.columnsWritten = True # if we need to write the columns into the sources.csv file
-        ## specify source files
-        # self.dates = [f for f in os.listdir(self.uncalibrated_path) if not f.startswith('.')] # index date folders in ArchSky
-        self.uncalibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' # specify both paths as previous days date
-        self.calibrated_path += datetime.strftime(datetime.utcnow()-timedelta(days=days_old),'%Y%m%d')+'/' 
-        if not os.path.exists(self.uncalibrated_path):
-            print('\tNo images found in %s' % self.uncalibrated_path)
-            sleep(1)
-            print('\tExiting...')
-            sleep(1.5)
-            print("\033c")
-            sys.exit()
-
-        if not os.path.exists(self.calibrated_path):
-            os.makedirs(self.calibrated_path)
-        all_files = [f for f in os.listdir(self.uncalibrated_path) if os.path.isfile(os.path.join(self.uncalibrated_path,f)) and not f.startswith('.')]
-        self.list_of_files  = [f.rstrip() for f in all_files if f.endswith('.fits') or f.endswith('.fit')]
-
-        # src_files = [f for f in all_files if f.endswith('.SRC')]
-        print('\tSearching %s for sky images...' % self.uncalibrated_path)
-        sleep(0.3)
-        print('\tSearching %s for calibration files...' % self.path_to_cal)
-        sleep(0.3)
-        print('\033c')
-
-
-        # for filename in src_files:
-        #     shutil.copy(self.uncalibrated_path+filename, self.calibrated_path) # copy over SRC files since we need them later but obviously dont need to calibrate them
+        self.isCalibrated = True # now its calibrated so we change this variable to True
 
 
     def Reduce(self):
-        header('Calibration & Source Extraction',count=(self.count,len(self.list_of_files)))
+        header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
         
         light_h,light = self.hdr,self.img # bring up the hdr and image
-        prnt(self.filename,'Successfully opened '+light_h['FILTER']+' image in '+self.uncalibrated_path,filename=True)
-        self.path_to_cal = 'MasterCal/binning'+str(light_h['XBINNING'])+'/' # search for calibration files in binning-specific folder
+        prnt(self.filename,'Successfully opened %s image in %s' % (light_h['FILTER'],self.uncalibrated_path),filename=True)
+        self.path_to_masters = 'MasterCal/binning%s/' % str(light_h['XBINNING']) # search for calibration files in binning-specific folder
      
         # open bias frame
         try: 
-            bias_fits = fits.open(self.path_to_cal+'bias_master.fit') 
-            prnt(self.filename,'Successfully opened bias master %s' % self.path_to_cal+'bias_master.fit')
+            bias_fits = fits.open(self.path_to_masters+'bias_master.fit') 
+            prnt(self.filename,'Successfully opened bias master %s' % self.path_to_masters+'bias_master.fit')
         except: # if you encounter error
-            prnt(self.filename,'Failed to open bias master %s' % self.path_to_cal+'bias_master.fit. Wrote to DR_errorlog.txt')
-            self.writeError('Missing bias master in %s. Data reduction halted' % self.path_to_cal)
+            prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit. Wrote to DR_errorlog.txt')
+            self.writeError('     Missing bias master in %s. Data reduction halted' % self.path_to_masters)
             sys.exit() # exit the program since you can't calibrate files without a bias frame
 
         bias_h = bias_fits[0].header # split into header and data
@@ -349,11 +353,11 @@ class Field:
 
         # open dark frame
         try:
-            dark_fits = fits.open(self.path_to_cal+'dark_master.fit') 
-            prnt(self.filename,'Successfully opened dark master %s' % self.path_to_cal+'dark_master.fit')
+            dark_fits = fits.open(self.path_to_masters+'dark_master.fit') 
+            prnt(self.filename,'Successfully opened dark master %s' % self.path_to_masters+'dark_master.fit')
         except:
-            prnt(self.filename,'Failed to open dark master %s' % self.path_to_cal+'dark_master.fit. Wrote to DR_errorlog.txt')
-            self.writeError('Missing dark master in %s. Data reduction halted' % self.path_to_cal)
+            prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit. Wrote to DR_errorlog.txt')
+            self.writeError('     Missing dark master in %s. Data reduction halted' % self.path_to_masters)
             sys.exit()
 
         dark_h = dark_fits[0].header
@@ -364,48 +368,48 @@ class Field:
 
         # open filter-specific flat field
         try: 
-            flat_fits = fits.open(self.path_to_cal+'flat_master_'+light_h['FILTER']+'.fit') 
-            prnt(self.filename,'Successfully opened '+self.path_to_cal+'flat_master_'+light_h['FILTER']+'.fit')
+            flat_fits = fits.open(self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit') 
+            prnt(self.filename,'Successfully opened '+self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
         except:
-            prnt(self.filename,'Failed to open flat master %s' % self.path_to_cal+'flat_master_'+light_h['FILTER']+'.fit. Wrote to DR_errorlog.txt')
-            self.writeError('Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_cal))
+            prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit. Wrote to DR_errorlog.txt')
+            self.writeError('     Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_masters))
             sys.exit()
         
         flat_h = flat_fits[0].header
         flat = flat_fits[0].data
 
         # perform the actual data reduction
-        if self.calibrate(light_h,light)==True: # if we need to calibrated
+        if self.checkCalibration(light_h,light)==True: # if we need to calibrated
             prnt(self.filename,'Calibrating image...' )
 
             bias_corrected_image = light - bias # subtract the bias
-            dark_corrected_image = bias_corrected_image - (exptime/dxptime)*dark # scale the dark linearly w/ exptime and subtract
+            dark_corrected_image = bias_corrected_image - (exptime/dxptime) * dark # scale the dark linearly w/ exptime and subtract
             final_image = dark_corrected_image / flat # divide by the flat field (already normalized)
             
-            self.write_to_header(light_h)
-            self.save_file(light_h, final_image,self.filename)
+            self.writeToHeader(light_h)
+            self.saveFits(light_h, final_image,self.filename)
 
 
-        elif self.calibrate(light_h,light)=='OnlyDark': # if we only had an auto dark
+        elif self.checkCalibration(light_h,light)=='OnlyDark': # if we only had an auto dark
             prnt(self.filename,'Calibrating image...' )
             
             final_image = light / flat # divide by the flat field
 
-            self.write_to_header(light_h)
-            self.save_file(light_h, final_image,self.filename)
+            self.writeToHeader(light_h)
+            self.saveFits(light_h, final_image,self.filename)
 
 
-        elif self.calibrate(light_h,light)=='Redundant': # if it was already calibrated
-            self.writeError('Attempted redundant calibration')
+        elif self.checkCalibration(light_h,light)=='Redundant': # if it was already calibrated
+            self.writeError('     Attempted redundant calibration')
             prnt(self.filename,'Image already calibrated')
-            self.save_file(light_h, light,self.filename) # still save the file because we can still use it
+            self.saveFits(light_h, light,self.filename) # still save the file because we can still use it
 
-        elif self.calibrate(light_h,light)=='Temp': # if its temp is wrong
-            self.writeError('Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
+        elif self.checkCalibration(light_h,light)=='Temp': # if its temp is wrong
+            self.writeError('     Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
             prnt(self.filename,'Image taken at > '+str(self.max_temp)+' degrees C')
 
-        elif self.calibrate(light_h,light)=='Size':
-            self.writeError('Rejected calibration, captured with subframe or non-standard binning')
+        elif self.checkCalibration(light_h,light)=='Size':
+            self.writeError('     Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
 
         del flat_fits,bias_fits,dark_fits
@@ -459,11 +463,13 @@ class Field:
             if not flag==0:
                 if flag==16:
                     prnt(self.filename,'SEP flag #%s, corrupted aperture data, star discarded' % str(flag),alert=True)
-                    self.writeError('Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
+                    if verbose_errors:
+                        self.writeError('     Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
                     indices_to_remove.append(i)
                 else:
                     prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
-                    writeError('Source Extractor flag #%s' % str(flag))
+                    if verbose_errors:
+                        writeError('     Source Extractor flag #%s' % str(flag))
             
             # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in, r_out,gain=egain)
             # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
@@ -498,7 +504,8 @@ class Field:
         for j in range(len(flux)): # if background subtraction isn't working correctly you can get negative flux values
             if flux[j]<0:
                 prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]),alert=True)
-                self.writeError('Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]))
+                if verbose_errors:
+                    self.writeError('     Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]))
                 indices_to_remove.append(j)
 
         flux = np.delete(flux, (indices_to_remove), axis=0)
@@ -514,7 +521,7 @@ class Field:
         print('')
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
         if not len(flux)==len(objects):
-            self.writeError('Number objects and fluxes do not match, resulting data is unreliable')
+            self.writeError('     Number objects and fluxes do not match, resulting data is unreliable')
 
         ### retrieve magnitudes from catalog
         time = hdr['DATE-OBS'] # time image was taken
@@ -604,7 +611,7 @@ class Field:
 	
         cmags_nonan = [k for k in cmags if not math.isnan(float(k))] # get rid of the nan values 
         if not len(instmags_to_median)==len(cmags_nonan): # the two lists above must be the same length to gaurantee that we are using the same stars for offset calculation
-            self.writeError('Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
+            self.writeError('     Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
             raise Exception('Catalog comparison list not same length as instrumental magnitude list')
 
         d = np.array(cmags_nonan) - np.array(instmags_to_median) # calculate the differences for each star
@@ -630,7 +637,7 @@ class Field:
         print(' ')
         sleep(1)
 
-        header('Calibration & Source Extraction',count=(self.count,len(self.list_of_files)))
+        header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
         
         return output
 
@@ -675,6 +682,7 @@ class Field:
                 writer.writerow(self.output.keys())
                 self.columnsWritten = True
             writer.writerows(zip(*self.output.values()))
+        self.writeError('     Wrote %s data points from image' % str(len(self.output['id'])))
         print('\033c')
    
     def Extract(self):
@@ -682,7 +690,7 @@ class Field:
         self.world = self.Convert()
         if self.world =='NOWCS':
             prnt(self.filename,'No WCS data exists in the header for this image, skipping...',alert = True)
-            self.writeError('No WCS data found in image header, image skipped')
+            self.writeError('     No WCS data found in image header, image skipped')
             sleep(2)
         else:
             self.output = self.Photometry()

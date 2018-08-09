@@ -85,6 +85,9 @@ def openData(filename):
         dictionary[i]=np.array(df[i])
     return dictionary
 
+# def find_comparison_stars(data,RA,DEC,magnitude,imagename):
+#     choices = [data['id'][v] for v in range(len(data['id'])) if ]
+
 # init()
 header()
 sources = openData('sources.csv')
