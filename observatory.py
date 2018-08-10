@@ -60,9 +60,9 @@ def sendStatus():
         dictionary[i]=np.array(df[i])
     sources = dictionary
 
-    images_processed = len(np.unique([sources['IMGNAME'][x] for x in range(len(sources['IMGNAME'])) if datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
-    stars_logged = len(np.unique([sources['id'][x] for x in range(len(sources['id'])) if datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
-    stars_not_matched = len([sources['id'][x] for x in range(len(sources['id'])) if str(sources['id'][x])=='nan' and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day])
+    images_processed = len(np.unique([sources['IMGNAME'][x] for x in range(len(sources['IMGNAME'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
+    stars_logged = len(np.unique([sources['id'][x] for x in range(len(sources['id'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
+    stars_not_matched = len([sources['id'][x] for x in range(len(sources['id'])) if str(sources['id'][x])=='nan' and isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day])
 
     # set up the SMTP server
     s = smtplib.SMTP('smtp.gmail.com', 587)
@@ -92,7 +92,8 @@ def sendStatus():
     filename = "errorlog.txt"
     with open(filename,'rb') as attachment:    
         for line in attachment:
-            if str(line[0:10]) == strftime('%Y-%m-%d', gmtime()):
+	    log_time = datetime.strptime(str(line[0:20]),"%Y-%m-%d %H:%M GMT")
+            if log_time >= datetime.strptime(start_time,'%Y-%m-%d %H:%M GMT') and log_time <= datetime.strptime(end_time,"%Y-%m-%d %H:%M GMT"):
                 body += line.strip()+'\n'
 
     body += '\nAttached is the full error log'
@@ -183,7 +184,7 @@ def dailyCopy(overwrite=False):
 
     for i in range(2):
         print('\tCopying from %s ' % copys[i])
-        sleep(0.8)
+        sleep(1.5)
         all_dates = [f for f in os.listdir(copys[i]) if not f.startswith('.') and not os.path.isfile(f)]
         recent_dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
         dates = list(set(all_dates) & set(recent_dates))
@@ -193,15 +194,19 @@ def dailyCopy(overwrite=False):
 	dates_str = ''
 	for x in dates:
 	    dates_str += x+' '
-
-        print('\tLooking for dates %s, found %s in %s' % (recent_dates_str,dates_str,copys[i]))
-        dates_src = [copys[i]+date+'/' for date in dates]
+	if dates_str.strip()=='':
+	    print('\tNo directories in %s matched %s' % (copys[i],recent_dates_str))
+        else:
+	    print('\tLooking for dates %s found %s in %s' % (recent_dates_str,dates_str,copys[i]))
+        sleep(2)
+	dates_src = [copys[i]+date+'/' for date in dates]
         dates_dst = [archives[i]+date+'/' for date in dates]
 
         for j in range(len(dates_src)):
 	    print('\tAttempting copy of %s' % dates_src[j])
 	    writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
-            try:
+            sleep(2)
+	    try:
                 shutil.copytree(dates_src[j],dates_dst[j])
             except:
                 if overwrite:
@@ -209,16 +214,19 @@ def dailyCopy(overwrite=False):
                         shutil.rmtree(dates_dst[j])
                         shutil.copytree(dates_src[j], dates_dst[j])
                     print('\tDirectory %s already exists, overwriting' % dates_dst[j])
+		    sleep(3)
 		    writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
                 else:
                     print('\tDirectory %s already exists, skipping' % dates_dst[j])
+		    sleep(3)
                     writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
             else:
                 print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
+		sleep(3)
                 writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
-        sleep(0.8)
+        sleep(2)
         print('\tComplete')
-        sleep(1)
+        sleep(2)
         print('')
 
 
@@ -245,21 +253,21 @@ def makeMasters(writeOver=False):
         header('Making Masters')
 
         if not os.path.exists(path_to_cal):
-            sleep(0.5)
+            sleep(1.5)
             print('\tNo calibration date folder found %s' % path_to_cal)
-            sleep(1)
+            sleep(3)
             print('\tSkipping makeMasters for this date...')
             writeError('     in makeMasters: No path found at %s, skipped makeMasters for this date' % path_to_cal)
-            sleep(1.5)
+            sleep(3)
             continue
 
         filenames = [f for f in os.listdir(path_to_cal) if os.path.isfile(os.path.join(path_to_cal,f)) if not f.startswith('.')] # list of filenames to process
         if len(filenames)==0:
-            sleep(0.5)
-            print('\tNo images in %s' % path_to_cal)
-            sleep(1)
-            print('\tSkipping makeMasters for this date')
             sleep(1.5)
+            print('\tNo images in %s' % path_to_cal)
+            sleep(3)
+            print('\tSkipping makeMasters for this date')
+            sleep(3)
             writeError('     in makeMasters: No images in %s, skipped makeMasters' % path_to_cal)
             continue
 
@@ -495,8 +503,9 @@ class Field:
             prnt(self.filename,'Successfully opened bias master %s' % self.path_to_masters+'bias_master.fit')
         except: # if you encounter error
             prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit')
+	    sleep(2)
             self.writeError('     in Reduce: Missing bias master in %s. Data reduction halted' % self.path_to_masters)
-            sys.exit() # exit the program since you can't calibrate files without a bias frame
+            return # exit the program since you can't calibrate files without a bias frame
 
         bias_h = bias_fits[0].header # split into header and data
         bias = bias_fits[0].data
@@ -507,8 +516,9 @@ class Field:
             prnt(self.filename,'Successfully opened dark master %s' % self.path_to_masters+'dark_master.fit')
         except:
             prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit')
+	    sleep(2)
             self.writeError('     in Reduce: Missing dark master in %s. Data reduction halted' % self.path_to_masters)
-            sys.exit()
+            return
 
         dark_h = dark_fits[0].header
         dark = dark_fits[0].data
@@ -522,8 +532,9 @@ class Field:
             prnt(self.filename,'Successfully opened '+self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
         except:
             prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
+	    sleep(2)
             self.writeError('     in Reduce: Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_masters))
-            sys.exit()
+            return
         
         flat_h = flat_fits[0].header
         flat = flat_fits[0].data
@@ -557,10 +568,12 @@ class Field:
         elif self.checkCalibration(light_h,light)=='Temp': # if its temp is wrong
             self.writeError('     in Reduce: Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
             prnt(self.filename,'Image taken at > '+str(self.max_temp)+' degrees C')
+	    sleep(4)
 
         elif self.checkCalibration(light_h,light)=='Size':
             self.writeError('     in Reduce: Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
+	    sleep(4)
 
         del flat_fits,bias_fits,dark_fits
 
