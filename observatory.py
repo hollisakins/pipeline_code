@@ -7,7 +7,8 @@ import csv # for reading/writing from csv files
 import sys # for interacting with the computer, shutting down the program, etc
 import shutil # solely for copying .SRC files between directories 
 from datetime import datetime,timedelta
-from time import strftime, gmtime, strptime, sleep 
+from time import strftime, gmtime, strptime, sleep, localtime
+import datetime as dt
 from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
 
 # astro packages
@@ -17,6 +18,11 @@ from astroquery.vizier import Vizier # for looking up stars in catalogs listed i
 import astropy.coordinates as coord # for inputting coordinates into Vizier
 import astropy.units as u # for units for the coord module
 import sep # source extraction package based on the SExtractor application
+import smtplib
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+from email.MIMEBase import MIMEBase
+from email import encoders
 
 def checkversion():
     vers = '%s.%s' % (sys.version_info[0],sys.version_info[1])
@@ -30,12 +36,93 @@ termsize = int(columns)
 # astropy gives warning for a depricated date format in TheSkyX fits header,
 # we dont need to see that so these two lines supress all warnings
 # comment them out when testing
+
 warnings.catch_warnings() 
 warnings.simplefilter('ignore')
+
+start_time = ''
+end_time = ''
 
 slow = False # if slow=True it will pause between printing each line just to make it easier to read, good for testing since it can go really fast
 days_old = 1
 verbose_errors = False
+
+def sendStatus():
+    header('Sending Update')
+    import pandas as pd
+    
+    with open('sources.csv') as csvFile:
+        reader = csv.reader(csvFile)
+        keys = next(reader)
+    dictionary = dict()
+    for i in keys:
+        df = pd.read_csv('sources.csv')
+        dictionary[i]=np.array(df[i])
+    sources = dictionary
+
+    images_processed = len(np.unique([sources['IMGNAME'][x] for x in range(len(sources['IMGNAME'])) if datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
+    stars_logged = len(np.unique([sources['id'][x] for x in range(len(sources['id'])) if datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
+    stars_not_matched = len([sources['id'][x] for x in range(len(sources['id'])) if str(sources['id'][x])=='nan' and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day])
+
+    # set up the SMTP server
+    s = smtplib.SMTP('smtp.gmail.com', 587)
+    s.starttls()
+    print('\tEstablished SMTP server')
+    sleep(0.5)
+    address = 'gcdatapipeline@gmail.com'
+    password = '**Mintaka'
+
+    s.login(address,password)
+
+    msg = MIMEMultipart()
+    msg['From'] = 'Guilford College Cline Observatory'
+    msg['Subject'] = "GC Data Pipeline Update %s" % strftime("%Y-%m-%d", localtime())
+    
+    body = """
+    Today's Pipeline Run:\n
+    
+    Began %s, completed %s
+    Unique images processed: %s
+    Unique stars logged: %s
+    Stars not matched to catalog: %s\n
+    """ % (start_time,end_time,images_processed,stars_logged,stars_not_matched)
+    printing = body
+    body += "Here are the log entries for today's run:\n"
+
+    filename = "errorlog.txt"
+    with open(filename,'rb') as attachment:    
+        for line in attachment:
+            if str(line[0:10]) == strftime('%Y-%m-%d', gmtime()):
+                body += line.strip()+'\n'
+
+    body += '\nAttached is the full error log'
+    msg.attach(MIMEText(body, 'plain'))
+        
+    with open(filename,'rb') as attachment:    
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload((attachment).read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', "attachment; filename= %s" % filename)
+        msg.attach(part)
+
+    text = msg.as_string()
+
+    recipients = open('email_recipients.txt','r').read().splitlines()
+
+    all_recipients = recipients[0]
+    for x in range(1,len(recipients)):
+        all_recipients += ', '+recipients[x]
+
+    print('\tSending message to %s\n' % all_recipients)
+    sleep(1)
+    print(printing)
+    
+
+    for recipient in recipients:
+        msg['To'] = recipient
+        s.sendmail(address, recipient, text)
+    s.quit()
+
 
 # function for printing the output consistently 
 def prnt(indent,strng,filename=False,alert=False):
@@ -328,7 +415,6 @@ class Field:
         dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
         self.uncalibrated_path = [self.uncalibrated_path+date+'/' for date in dates][day]
         self.calibrated_path = [self.calibrated_path+date+'/' for date in dates][day]
-        
         # if no path for uncalibrated images, exit
         if not os.path.exists(self.uncalibrated_path):
             print('\tNo images found in %s' % self.uncalibrated_path)
@@ -337,7 +423,7 @@ class Field:
             sleep(1.5)
             print("\033c")
             writeError('     in Initialize: Path %s does not exist, exiting pipeline run for today' % self.uncalibrated_path)
-            sys.exit()
+            return False
 
         # if no path for calibrated images, make one
         if not os.path.exists(self.calibrated_path):
@@ -354,6 +440,7 @@ class Field:
         print('\tSearching %s for calibration files...' % self.path_to_masters)
         sleep(1)
         print('\033c')
+        return True
 
     def checkCalibration(self,h,image): # check to see whether or not we need to calibrate the file
         if np.size(image)==8487264 or np.size(image)==2121816 or np.size(image)==942748: 
@@ -584,7 +671,7 @@ class Field:
 
         # lookup data in the UCAC4 catalog by querying Vizier
         v = Vizier(columns=['UCAC4','+_r','RAJ2000','DEJ2000','Bmag','Vmag','rmag'])
-        output = OrderedDict([('id',[]),('RA_C',[]),('DEC_C',[]),('RA_M',[]),('DEC_M',[]),('DIF',[]),('MAG_R',[]),('MAG_V',[]),('MAG_B',[]),('MAG_err',[]),('CMAG_R',[]),('CMAG_V',[]),('CMAG_B',[]),('DATETIME',[]),('IMGNAME',[])])
+        output = OrderedDict([('id',[]),('RA_C',[]),('DEC_C',[]),('RA_M',[]),('DEC_M',[]),('DIF',[]),('MAG_R',[]),('MAG_V',[]),('MAG_B',[]),('MAG_err',[]),('CMAG_R',[]),('CMAG_V',[]),('CMAG_B',[]),('DATETIME',[]),('IMGNAME',[]),('RUNTIME',[])])
         output['MAG_err'] = instmag_err # go ahead and write the errors into the output dict
         cmags = [] # catalog magnitudes list we will update in the loop
         misfires = 0 # number of errors 
@@ -613,6 +700,7 @@ class Field:
                 output['DIF'].append('nan')
                 output['DATETIME'].append(time)
                 output['IMGNAME'].append(self.filename)
+                output['RUNTIME'].append(strftime("%Y-%m-%d %H:%M GMT", gmtime()))
                 cmags.append('nan') 
                 continue # skip to the next object by moving to the next iteration of the loop
 
@@ -639,6 +727,7 @@ class Field:
                     output['DIF'].append(dif[i])
                     output['DATETIME'].append(time)
                     output['IMGNAME'].append(self.filename)
+                    output['RUNTIME'].append(strftime("%Y-%m-%d %H:%M GMT", gmtime()))
                     cmags.append(flux[i])
                     if not math.isnan(flux[i]):
                         objects_indices_matched.append(n)
@@ -654,6 +743,7 @@ class Field:
                     output['DIF'].append('nan')
                     output['DATETIME'].append(time)
                     output['IMGNAME'].append(self.filename)
+                    output['RUNTIME'].append(strftime("%Y-%m-%d %H:%M GMT", gmtime()))
                     cmags.append('nan') 
                     continue
 
@@ -749,4 +839,5 @@ class Field:
         else:
             self.output = self.Photometry()
             self.writeData()
+
 
