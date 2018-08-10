@@ -10,6 +10,11 @@ from datetime import datetime,timedelta
 from time import strftime, gmtime, strptime, sleep, localtime
 import datetime as dt
 from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
+from email.MIMEMultipart import MIMEMultipart
+import smtplib
+from email.MIMEText import MIMEText
+from email.MIMEBase import MIMEBase
+from email import encoders
 
 # astro packages
 from astropy.io import fits # fits module for opening and writing to fits files
@@ -18,11 +23,6 @@ from astroquery.vizier import Vizier # for looking up stars in catalogs listed i
 import astropy.coordinates as coord # for inputting coordinates into Vizier
 import astropy.units as u # for units for the coord module
 import sep # source extraction package based on the SExtractor application
-import smtplib
-from email.MIMEMultipart import MIMEMultipart
-from email.MIMEText import MIMEText
-from email.MIMEBase import MIMEBase
-from email import encoders
 
 def checkversion():
     vers = '%s.%s' % (sys.version_info[0],sys.version_info[1])
