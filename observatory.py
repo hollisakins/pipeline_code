@@ -187,11 +187,20 @@ def dailyCopy(overwrite=False):
         all_dates = [f for f in os.listdir(copys[i]) if not f.startswith('.') and not os.path.isfile(f)]
         recent_dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
         dates = list(set(all_dates) & set(recent_dates))
+	recent_dates_str = ''
+	for x in recent_dates:
+	    recent_dates_str += x+' '
+	dates_str = ''
+	for x in dates:
+	    dates_str += x+' '
 
+        print('\tLooking for dates %s, found %s in %s' % (recent_dates_str,dates_str,copys[i]))
         dates_src = [copys[i]+date+'/' for date in dates]
         dates_dst = [archives[i]+date+'/' for date in dates]
 
         for j in range(len(dates_src)):
+	    print('\tAttempting copy of %s' % dates_src[j])
+	    writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
             try:
                 shutil.copytree(dates_src[j],dates_dst[j])
             except:
@@ -200,12 +209,13 @@ def dailyCopy(overwrite=False):
                         shutil.rmtree(dates_dst[j])
                         shutil.copytree(dates_src[j], dates_dst[j])
                     print('\tDirectory %s already exists, overwriting' % dates_dst[j])
+		    writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
                 else:
                     print('\tDirectory %s already exists, skipping' % dates_dst[j])
                     writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
             else:
                 print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
-                writeError('     Copied dir %s to %s' % (dates_src[j],dates_dst[j]))
+                writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
         sleep(0.8)
         print('\tComplete')
         sleep(1)
