@@ -494,7 +494,7 @@ class Field:
             bias_fits = fits.open(self.path_to_masters+'bias_master.fit') 
             prnt(self.filename,'Successfully opened bias master %s' % self.path_to_masters+'bias_master.fit')
         except: # if you encounter error
-            prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit. Wrote to DR_errorlog.txt')
+            prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit')
             self.writeError('     in Reduce: Missing bias master in %s. Data reduction halted' % self.path_to_masters)
             sys.exit() # exit the program since you can't calibrate files without a bias frame
 
@@ -506,7 +506,7 @@ class Field:
             dark_fits = fits.open(self.path_to_masters+'dark_master.fit') 
             prnt(self.filename,'Successfully opened dark master %s' % self.path_to_masters+'dark_master.fit')
         except:
-            prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit. Wrote to DR_errorlog.txt')
+            prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit')
             self.writeError('     in Reduce: Missing dark master in %s. Data reduction halted' % self.path_to_masters)
             sys.exit()
 
@@ -521,7 +521,7 @@ class Field:
             flat_fits = fits.open(self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit') 
             prnt(self.filename,'Successfully opened '+self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
         except:
-            prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit. Wrote to DR_errorlog.txt')
+            prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
             self.writeError('     in Reduce: Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_masters))
             sys.exit()
         
