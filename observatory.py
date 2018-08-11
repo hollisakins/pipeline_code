@@ -10,6 +10,7 @@ from datetime import datetime,timedelta
 from time import strftime, gmtime, strptime, sleep, localtime
 import datetime as dt
 from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
+from photutils import CircularAperture,aperture_photometry,CircularAnnulus
 
 # astro packages
 from astropy.io import fits # fits module for opening and writing to fits files
@@ -48,7 +49,7 @@ def sendStatus():
     from email.MIMEText import MIMEText
     from email.MIMEBase import MIMEBase
     from email import encoders
-    
+
     header('Sending Update')
     import pandas as pd
     
@@ -63,7 +64,7 @@ def sendStatus():
 
     images_processed = len(np.unique([sources['IMGNAME'][x] for x in range(len(sources['IMGNAME'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
     stars_logged = len(np.unique([sources['id'][x] for x in range(len(sources['id'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
-    stars_not_matched = len([sources['id'][x] for x in range(len(sources['id'])) if str(sources['id'][x])=='nan' and isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day])
+    stars_not_matched = round(float(len([sources['id'][x] for x in range(len(sources['id'])) if str(sources['id'][x])=='nan' and isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))/float(images_processed),2)
 
     # set up the SMTP server
     s = smtplib.SMTP('smtp.gmail.com', 587)
@@ -86,7 +87,7 @@ def sendStatus():
     Completed %s<br />
     Unique images processed: %s<br />
     Unique stars logged: %s<br />
-    Stars not matched to catalog: %s<br /><br />
+    Stars not matched to catalog (avg): %s<br /><br />
 
     """ % (start_time,end_time,images_processed,stars_logged,stars_not_matched)
     
@@ -95,7 +96,7 @@ def sendStatus():
     Completed %s
     Unique images processed: %s
     Unique stars logged: %s
-    Stars not matched to catalog: %s
+    Stars not matched to catalog (avg): %s
     """ % (start_time,end_time,images_processed,stars_logged,stars_not_matched)
 
     body += "Here are the log entries for today's run:\n<p style='font-size:8pt;'>"
@@ -508,6 +509,7 @@ class Field:
         header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
         
         light_h,light = self.hdr,self.img # bring up the hdr and image
+        # light = light + float(light_h['PEDESTAL'])
         prnt(self.filename,'Successfully opened %s image in %s' % (light_h['FILTER'],self.uncalibrated_path),filename=True)
         self.path_to_masters = 'MasterCal/binning%s/' % str(light_h['XBINNING']) # search for calibration files in binning-specific folder
      
@@ -588,7 +590,8 @@ class Field:
             self.writeError('     in Reduce: Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
             sleep(4)
- 
+        
+        del self.hdr,self.img
         del flat_fits,bias_fits,dark_fits
 
     def Source(self):
@@ -628,15 +631,13 @@ class Field:
         objects = self.world 
 
         for i in range(len(self.source)):
-            # if self.source['fwhm'][i]<=0:
-            #     prnt(self.filename,'FWHM leq zero at pixel position (%s,%s), star discarded' % (self.source['X'][i],self.source['Y'][i]),alert=True)
-            #     self.writeError('SRC FWHM less than or equal to 0 at pixel position (%s,%s), star discarded from aperture photometry' % (self.source['X'][i],self.source['Y'][i]))
-            #     objects_to_remove.append(i)
-            # else:
-
+            self.aperture_size = self.aperture_size / hdr['XBINNING']
             r_in = 1.5*self.aperture_size
             r_out = 2.0*self.aperture_size
             flux, fluxerr, flag = sep.sum_circle(img, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain)
+            # aperture = CircularAperture((self.source['x'][i],self.source['y'][i]),self.aperture_size)
+            # phot_table = aperture_photometry(img, aperture)
+            # flux = phot_table['aperture_sum'][0]
             if not flag==0:
                 if flag==16:
                     prnt(self.filename,'SEP flag #%s, corrupted aperture data, star discarded' % str(flag),alert=True)
@@ -648,7 +649,7 @@ class Field:
                     if verbose_errors:
                         writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
             
-            # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['X'][i], self.source['Y'][i], r_in, r_out,gain=egain)
+            # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['x'][i], self.source['y'][i], r_in, r_out,gain=egain)
             # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
             # flux = flux - bkg_mean * (math.pi*self.aperture_size*self.aperture_size)
             
@@ -670,7 +671,13 @@ class Field:
                 annulus_values = [a for a in annulus_values if a<=cutoff]
             
             bkg_mean = np.mean(annulus_values)
+
+
+            # annulus = CircularAnnulus((self.source['x'][i],self.source['y'][i]),r_in,r_out)
+            # bkg_mean = aperture_photometry(img,annulus)['aperture_sum'][0] / annulus.area()
             flux = flux - bkg_mean * math.pi * self.aperture_size * self.aperture_size
+
+
             fluxerr = np.sqrt(fluxerr*fluxerr+np.sum(annulus_values))
             fluxes.append(flux)
             fluxerrs.append(fluxerr)
@@ -789,8 +796,7 @@ class Field:
         prnt(self.filename,'Missed %s objects' % misfires)    
         instmags_to_median = [instmag[m] for m in objects_indices_matched] # instrumental magnitudes that matched to the catalog
         # we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
-	
-        cmags_nonan = [k for k in cmags if not math.isnan(float(k))] # get rid of the nan values 
+
         if not len(instmags_to_median)==len(cmags_nonan): # the two lists above must be the same length to gaurantee that we are using the same stars for offset calculation
             self.writeError('     in Photometry: Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
             raise Exception('Catalog comparison list not same length as instrumental magnitude list')

@@ -281,8 +281,8 @@ while True:
         possible_comparison_ids = np.unique(possible_comparison_ids)
         for j in range(len(possible_comparison_ids)):
             possible_indices = np.nonzero(sources['id']==possible_comparison_ids[j])[0]
-	    print('\t%s: %s, mag %s, N=%s' % (j+1,possible_comparison_ids[j],round(np.mean([float(sources['MAG_'+filt][x]) for x in possible_indices]),2),len(possible_indices)))
-	print('')
+            print('\t%s: %s, mag %s, N=%s' % (j+1,possible_comparison_ids[j],round(np.mean([float(sources['MAG_'+filt][x]) for x in possible_indices]),2),len(possible_indices)))
+        print('')
         comparisonid = raw_input('\tComparison star selction (or enter for no comparison star): ')
 
         saveflag = raw_input("\tSave plot as file? (will also save summary statistics to .txt file [y/n]: ")
