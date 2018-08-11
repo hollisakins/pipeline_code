@@ -188,42 +188,43 @@ def dailyCopy(overwrite=False):
         all_dates = [f for f in os.listdir(copys[i]) if not f.startswith('.') and not os.path.isfile(f)]
         recent_dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
         dates = list(set(all_dates) & set(recent_dates))
-	recent_dates_str = ''
-	for x in recent_dates:
+    recent_dates_str = ''
+    for x in recent_dates:
 	    recent_dates_str += x+' '
-	dates_str = ''
-	for x in dates:
+    dates_str = ''
+    for x in dates:
 	    dates_str += x+' '
-	if dates_str.strip()=='':
+    if dates_str.strip()=='':
 	    print('\tNo directories in %s matched %s' % (copys[i],recent_dates_str))
-        else:
+    else:
 	    print('\tLooking for dates %s found %s in %s' % (recent_dates_str,dates_str,copys[i]))
-        sleep(2)
-	dates_src = [copys[i]+date+'/' for date in dates]
-        dates_dst = [archives[i]+date+'/' for date in dates]
+    
+    sleep(2)
+    dates_src = [copys[i]+date+'/' for date in dates]
+    dates_dst = [archives[i]+date+'/' for date in dates]
 
-        for j in range(len(dates_src)):
-	    print('\tAttempting copy of %s' % dates_src[j])
-	    writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
-            sleep(2)
-	    try:
-                shutil.copytree(dates_src[j],dates_dst[j])
-            except:
-                if overwrite:
-                    if os.path.exists(dates_dst[j]):
-                        shutil.rmtree(dates_dst[j])
-                        shutil.copytree(dates_src[j], dates_dst[j])
-                    print('\tDirectory %s already exists, overwriting' % dates_dst[j])
-		    sleep(3)
-		    writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
-                else:
-                    print('\tDirectory %s already exists, skipping' % dates_dst[j])
-		    sleep(3)
-                    writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
+    for j in range(len(dates_src)):
+        print('\tAttempting copy of %s' % dates_src[j])
+        writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
+        sleep(2)
+        try:
+            shutil.copytree(dates_src[j],dates_dst[j])
+        except:
+            if overwrite:
+                if os.path.exists(dates_dst[j]):
+                    shutil.rmtree(dates_dst[j])
+                    shutil.copytree(dates_src[j], dates_dst[j])
+                print('\tDirectory %s already exists, overwriting' % dates_dst[j])
+                sleep(3)
+                writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
             else:
-                print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
-		sleep(3)
-                writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
+                print('\tDirectory %s already exists, skipping' % dates_dst[j])
+                sleep(3)
+                writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
+        else:
+            print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
+            sleep(3)
+            writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
         sleep(2)
         print('\tComplete')
         sleep(2)
@@ -503,7 +504,7 @@ class Field:
             prnt(self.filename,'Successfully opened bias master %s' % self.path_to_masters+'bias_master.fit')
         except: # if you encounter error
             prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit')
-	    sleep(2)
+            sleep(2)
             self.writeError('     in Reduce: Missing bias master in %s. Data reduction halted' % self.path_to_masters)
             return # exit the program since you can't calibrate files without a bias frame
 
@@ -516,7 +517,7 @@ class Field:
             prnt(self.filename,'Successfully opened dark master %s' % self.path_to_masters+'dark_master.fit')
         except:
             prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit')
-	    sleep(2)
+            sleep(2)
             self.writeError('     in Reduce: Missing dark master in %s. Data reduction halted' % self.path_to_masters)
             return
 
@@ -532,7 +533,7 @@ class Field:
             prnt(self.filename,'Successfully opened '+self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
         except:
             prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
-	    sleep(2)
+            sleep(2)
             self.writeError('     in Reduce: Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_masters))
             return
         
@@ -568,12 +569,12 @@ class Field:
         elif self.checkCalibration(light_h,light)=='Temp': # if its temp is wrong
             self.writeError('     in Reduce: Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
             prnt(self.filename,'Image taken at > '+str(self.max_temp)+' degrees C')
-	    sleep(4)
+            sleep(4)
 
         elif self.checkCalibration(light_h,light)=='Size':
             self.writeError('     in Reduce: Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
-	    sleep(4)
+            sleep(4)
  
         del flat_fits,bias_fits,dark_fits
 
