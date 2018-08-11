@@ -92,7 +92,7 @@ def sendStatus():
     filename = "errorlog.txt"
     with open(filename,'rb') as attachment:    
         for line in attachment:
-	    log_time = datetime.strptime(str(line[0:20]),"%Y-%m-%d %H:%M GMT")
+            log_time = datetime.strptime(str(line[0:20]),"%Y-%m-%d %H:%M GMT")
             if log_time >= datetime.strptime(start_time,'%Y-%m-%d %H:%M GMT') and log_time <= datetime.strptime(end_time,"%Y-%m-%d %H:%M GMT"):
                 body += line.strip()+'\n'
 
