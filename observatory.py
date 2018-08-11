@@ -574,7 +574,7 @@ class Field:
             self.writeError('     in Reduce: Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
 	    sleep(4)
-
+ 
         del flat_fits,bias_fits,dark_fits
 
     def Source(self):
