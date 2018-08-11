@@ -10,11 +10,6 @@ from datetime import datetime,timedelta
 from time import strftime, gmtime, strptime, sleep, localtime
 import datetime as dt
 from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
-from email.MIMEMultipart import MIMEMultipart
-import smtplib
-from email.MIMEText import MIMEText
-from email.MIMEBase import MIMEBase
-from email import encoders
 
 # astro packages
 from astropy.io import fits # fits module for opening and writing to fits files
@@ -48,6 +43,12 @@ days_old = 1
 verbose_errors = False
 
 def sendStatus():
+    from email.MIMEMultipart import MIMEMultipart
+    import smtplib
+    from email.MIMEText import MIMEText
+    from email.MIMEBase import MIMEBase
+    from email import encoders
+    
     header('Sending Update')
     import pandas as pd
     
@@ -78,26 +79,36 @@ def sendStatus():
     msg['From'] = 'Guilford College Cline Observatory'
     msg['Subject'] = "GC Data Pipeline Update %s" % strftime("%Y-%m-%d", localtime())
     
-    body = """
-    Today's Pipeline Run:\n
+    body = """<font="Courier">
+    <b><h2>Today's Pipeline Run:</h2></b>
+    <br />
+    Began %s <br />
+    Completed %s<br />
+    Unique images processed: %s<br />
+    Unique stars logged: %s<br />
+    Stars not matched to catalog: %s<br /><br />
+
+    """ % (start_time,end_time,images_processed,stars_logged,stars_not_matched)
     
-    Began %s, completed %s
+    printing = """Today's Pipeline Run:\n
+    Began %s 
+    Completed %s
     Unique images processed: %s
     Unique stars logged: %s
-    Stars not matched to catalog: %s\n
+    Stars not matched to catalog: %s
     """ % (start_time,end_time,images_processed,stars_logged,stars_not_matched)
-    printing = body
-    body += "Here are the log entries for today's run:\n"
+
+    body += "Here are the log entries for today's run:\n<p style='font-size:8pt;'>"
 
     filename = "errorlog.txt"
     with open(filename,'rb') as attachment:    
         for line in attachment:
             log_time = datetime.strptime(str(line[0:20]),"%Y-%m-%d %H:%M GMT")
             if log_time >= datetime.strptime(start_time,'%Y-%m-%d %H:%M GMT') and log_time <= datetime.strptime(end_time,"%Y-%m-%d %H:%M GMT"):
-                body += line.strip()+'\n'
+                body += line.strip()+'<br />'
 
-    body += '\nAttached is the full error log'
-    msg.attach(MIMEText(body, 'plain'))
+    body += '\n</p>Attached is the full error log</font>'
+    msg.attach(MIMEText(body, 'html'))
         
     with open(filename,'rb') as attachment:    
         part = MIMEBase('application', 'octet-stream')
@@ -188,47 +199,49 @@ def dailyCopy(overwrite=False):
         all_dates = [f for f in os.listdir(copys[i]) if not f.startswith('.') and not os.path.isfile(f)]
         recent_dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
         dates = list(set(all_dates) & set(recent_dates))
-    recent_dates_str = ''
-    for x in recent_dates:
-	    recent_dates_str += x+' '
-    dates_str = ''
-    for x in dates:
-	    dates_str += x+' '
-    if dates_str.strip()=='':
-	    print('\tNo directories in %s matched %s' % (copys[i],recent_dates_str))
-    else:
-	    print('\tLooking for dates %s found %s in %s' % (recent_dates_str,dates_str,copys[i]))
-    
-    sleep(2)
-    dates_src = [copys[i]+date+'/' for date in dates]
-    dates_dst = [archives[i]+date+'/' for date in dates]
+        recent_dates_str = ''
+        for x in recent_dates:
+            recent_dates_str += x+' '
+        
+        dates_str = ''
+        for x in dates:
+            dates_str += x+' '
 
-    for j in range(len(dates_src)):
-        print('\tAttempting copy of %s' % dates_src[j])
-        writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
-        sleep(2)
-        try:
-            shutil.copytree(dates_src[j],dates_dst[j])
-        except:
-            if overwrite:
-                if os.path.exists(dates_dst[j]):
-                    shutil.rmtree(dates_dst[j])
-                    shutil.copytree(dates_src[j], dates_dst[j])
-                print('\tDirectory %s already exists, overwriting' % dates_dst[j])
-                sleep(3)
-                writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
-            else:
-                print('\tDirectory %s already exists, skipping' % dates_dst[j])
-                sleep(3)
-                writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
+        if dates_str.strip()=='':
+            print('\tNo directories in %s matched %s\n' % (copys[i],recent_dates_str))
         else:
-            print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
-            sleep(3)
-            writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
+            print('\tLooking for dates %s found %s in %s' % (recent_dates_str,dates_str,copys[i]))
+        
         sleep(2)
-        print('\tComplete')
-        sleep(2)
-        print('')
+        dates_src = [copys[i]+date+'/' for date in dates]
+        dates_dst = [archives[i]+date+'/' for date in dates]
+
+        for j in range(len(dates_src)):
+            print('\tAttempting copy of %s' % dates_src[j])
+            writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
+            sleep(2)
+            try:
+                shutil.copytree(dates_src[j],dates_dst[j])
+            except:
+                if overwrite:
+                    if os.path.exists(dates_dst[j]):
+                        shutil.rmtree(dates_dst[j])
+                        shutil.copytree(dates_src[j], dates_dst[j])
+                    print('\tDirectory %s already exists, overwriting' % dates_dst[j])
+                    sleep(3)
+                    writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
+                else:
+                    print('\tDirectory %s already exists, skipping' % dates_dst[j])
+                    sleep(3)
+                    writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
+            else:
+                print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
+                sleep(3)
+                writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
+            sleep(2)
+            print('\tComplete')
+            sleep(2)
+            print('')
 
 
 
