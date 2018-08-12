@@ -63,7 +63,10 @@ def sendStatus():
 
     images_processed = len(np.unique([sources['IMGNAME'][x] for x in range(len(sources['IMGNAME'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
     stars_logged = len(np.unique([sources['id'][x] for x in range(len(sources['id'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
-    stars_not_matched = round(float(len([sources['id'][x] for x in range(len(sources['id'])) if str(sources['id'][x])=='nan' and isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))/float(images_processed),2)
+    if not images_processed==0:
+        stars_not_matched = round(float(len([sources['id'][x] for x in range(len(sources['id'])) if str(sources['id'][x])=='nan' and isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))/float(images_processed),2)
+    else:
+        stars_not_matched = 0
 
     # set up the SMTP server
     s = smtplib.SMTP('smtp.gmail.com', 587)
