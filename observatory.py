@@ -10,7 +10,6 @@ from datetime import datetime,timedelta
 from time import strftime, gmtime, strptime, sleep, localtime
 import datetime as dt
 from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
-from photutils import CircularAperture,aperture_photometry,CircularAnnulus
 
 # astro packages
 from astropy.io import fits # fits module for opening and writing to fits files
