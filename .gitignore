@@ -13,3 +13,8 @@ errorlog.txt
 *.ipynb
 *.csv
 *.txt
+*.lock
+*.pl
+*.pl~
+*.sex
+
