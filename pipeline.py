@@ -5,7 +5,7 @@ obs.writeError('Beginning daily run...')
 obs.start_time = strftime("%Y-%m-%d %H:%M GMT", gmtime())
 
 # obs.slow = True #(default false)
-obs.days_old = 2 #(default 1)
+#obs.days_old = 2 #(default 1)
 # obs.verbose_errors = True #(default False, uncomment if haing difficulties in automated pipeline run)
 
 obs.dailyCopy(overwrite=False)
