@@ -109,6 +109,7 @@ while True:
         choices = [v for v in sources['id'] if not v=='nan']
         choices,counts = np.unique(choices,return_counts=True)
         choices = [v for v in choices if not v=='nan']
+        
         a = []
         for j in range(len(choices)):
             a.append((choices[j],counts[j])) 

@@ -251,7 +251,7 @@ def dailyCopy(overwrite=False):
 
 
 
-def makeMasters(writeOver=False):
+def makeMasters(directory=str,inPipeline=False,writeOver=False):
     '''Index calibration files and generate masters. 
 
     Searches for calibration files in the most recent date directory under 'ArchCal/'. 
@@ -260,9 +260,11 @@ def makeMasters(writeOver=False):
     Opt. Argument writeOver=False can be changed to True to allow older bias & dark frames to be
     over written by more recent ones.
     '''
-
-    dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
-    dates = ['ArchCal/'+date+'/' for date in dates]
+    if inPipeline:
+        dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
+        dates = ['ArchCal/'+date+'/' for date in dates]
+    else:
+        dates = np.array([directory])
 
     for path_to_cal in dates:
         header('Making Masters')
@@ -363,23 +365,28 @@ def makeMasters(writeOver=False):
                     writeError('     in makeMasters: No bias master for binning %sx%s, failed to create dark' % (i,i))
 
         for j in binnings: 
+            exec("dxptime=dark"+str(binn)+"_header['EXPTIME']")
             exec('f=np.unique(filters'+j+')') # establish unique filters 
             for i in f: # for each UNIQUE filter
                 exec('s=np.size('+i+j+')')
                 if not s==0: 
                     exec('filenames = '+i+j)
+                    exec("fxptime = "+i+j+"_header['EXPTIME']")
                     master = []
                     for filename in filenames:
                         with fits.open(path_to_cal+filename) as hdulist:
                             img = hdulist[0].data
                             master.append(img)
+                    master = np.array(master)
+                    exec("master = master - bias"+j+"_master")
+                    exec("master = master - dark"+j+"_master * fxptime / dxptime")
                     exec(i+j+"_master = np.median(master,axis=0)/np.max(np.median(master,axis=0))")  # normalize flat field and make master
                     print('\tConstructed master %s flat with binning %sx%s' % (i,j,j))
         
 
         # write the masters to fits files
         for i in binnings:
-            for j in ['bias','dark']: # for now: do not overwrite old bias / dark masters
+            for j in ['bias','dark']: 
                 if j+i+'_master' in locals():
                     try:
                         code = "fits.writeto('MasterCal/binning"+i+'/'+j+"_master.fit',"+j+i+'_master, header='+j+i+'_header,overwrite='+str(writeOver)+')'
@@ -390,8 +397,8 @@ def makeMasters(writeOver=False):
 
         for i in ['1','2','3','4']:
             exec('f=np.unique(filters'+i+')')
-            for j in f: # only overwrite flats for the unique filters that we chose to update that night
-                code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite=True)"
+            for j in f: 
+                code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite="+str(writeOver)+")"
                 exec(code)   
                 print('\tWrote master %s flat to file MasterCal/binning%s/flat_master_%s.fit' % (j,i,j))
         
@@ -414,8 +421,11 @@ class Field:
         self.counter = 0
     
 
-    def openFits(self,filename,calibrated=False):
+    def openFits(self,filename,calibrated=False,inPipeline=False):
         self.filename = filename
+        if not inPipeline:
+            self.uncalibrated_path = '' # portable functionality
+            self.calibrated_path = ''
         if not calibrated: # if it hasnt been calibrated we need the uncalibrated path 
             with fits.open(self.uncalibrated_path+self.filename) as hdulist:
                 self.hdr = hdulist[0].header
@@ -426,6 +436,8 @@ class Field:
                 self.hdr = hdulist[0].header
                 img = hdulist[0].data
                 self.img = np.array(img,dtype='<f4')
+
+    
 
     def writeError(self,description):
         name = 'errorlog.txt'
@@ -495,24 +507,32 @@ class Field:
         else:
             h['CALSTAT']='BDF' # otherwise set the value of calstat to BDF
 
-    def saveFits(self,h,data,filename):
-        if not os.path.exists(self.calibrated_path): 
-            os.makedirs(self.calibrated_path) # make a directory if there isnt one
-        
+    def saveFits(self,h,data,filename,inPipeline=True):
+        if inPipeline:
+            if not os.path.exists(self.calibrated_path): 
+                os.makedirs(self.calibrated_path) # make a directory if there isnt one
+        else:
+            self.calibrated_path = ''
         fits.writeto(self.calibrated_path+filename.replace(".fit","_calibrated.fit"),data,h,overwrite=True)
         prnt(self.filename,'Wrote file to '+self.calibrated_path)
         print(' ')
         self.isCalibrated = True # now its calibrated so we change this variable to True
 
 
-    def Reduce(self):
-        header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
+    def Reduce(self,inPipeline=False):
+        if inPipeline:
+            header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
         
         light_h,light = self.hdr,self.img # bring up the hdr and image
-        # light = light + float(light_h['PEDESTAL'])
         prnt(self.filename,'Successfully opened %s image in %s' % (light_h['FILTER'],self.uncalibrated_path),filename=True)
         self.path_to_masters = 'MasterCal/binning%s/' % str(light_h['XBINNING']) # search for calibration files in binning-specific folder
      
+        filt = light_h['FILTER']
+        if filt=='V' or filt=='R' or filt=='B':
+            self.narrowBand = True
+        else:
+            self.narrowBand = False
+
         # open bias frame
         try: 
             bias_fits = fits.open(self.path_to_masters+'bias_master.fit') 
@@ -555,6 +575,7 @@ class Field:
         flat_h = flat_fits[0].header
         flat = flat_fits[0].data
 
+
         # perform the actual data reduction
         if self.checkCalibration(light_h,light)==True: # if we need to calibrated
             prnt(self.filename,'Calibrating image...' )
@@ -564,7 +585,7 @@ class Field:
             final_image = dark_corrected_image / flat # divide by the flat field (already normalized)
             
             self.writeToHeader(light_h)
-            self.saveFits(light_h, final_image,self.filename)
+            self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
 
         elif self.checkCalibration(light_h,light)=='OnlyDark': # if we only had an auto dark
@@ -573,13 +594,13 @@ class Field:
             final_image = light / flat # divide by the flat field
 
             self.writeToHeader(light_h)
-            self.saveFits(light_h, final_image,self.filename)
+            self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
 
         elif self.checkCalibration(light_h,light)=='Redundant': # if it was already calibrated
             self.writeError('     in Reduce: Attempted redundant calibration')
             prnt(self.filename,'Image already calibrated')
-            self.saveFits(light_h, light,self.filename) # still save the file because we can still use it
+            self.saveFits(light_h, light,self.filename,inPipeline=inPipeline) # still save the file because we can still use it
 
         elif self.checkCalibration(light_h,light)=='Temp': # if its temp is wrong
             self.writeError('     in Reduce: Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
@@ -602,7 +623,7 @@ class Field:
         bkg_rms = bkg.globalrms
 
         img = img - bkg_data
-        objects = sep.extract(img, 2, err=bkg.globalrms,minarea=60/hdr['XBINNING']/hdr['YBINNING'])
+        objects = sep.extract(img, 2, err=bkg.globalrms,minarea=90/hdr['XBINNING']/hdr['YBINNING'])
         prnt(self.filename,'Source detection complete with %s objects' % str(len(objects)))
         return objects
 
@@ -620,42 +641,29 @@ class Field:
         prnt(self.filename,'Converted source coordinates from pixel to world')
         return world
 
+
     def Photometry(self): 
-        ### perform aperture photometry
         hdr,img = self.hdr,self.img
         egain = float(hdr['EGAIN'])
+
+        #####################################################################################################################################################
+        ### perform aperture photometry
+        #####################################################################################################################################################
+        
         prnt(self.filename,'Performing aperture photometry...')
 
         indices_to_remove,objects_to_remove = [],[]
         fluxes,fluxerrs = [],[]
-        objects = self.world 
 
         for i in range(len(self.source)):
             self.aperture_size = self.aperture_size / hdr['XBINNING']
             r_in = 1.5*self.aperture_size
-            r_out = 2.0*self.aperture_size
-            flux, fluxerr, flag = sep.sum_circle(img, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain)
-            # aperture = CircularAperture((self.source['x'][i],self.source['y'][i]),self.aperture_size)
-            # phot_table = aperture_photometry(img, aperture)
-            # flux = phot_table['aperture_sum'][0]
-            if not flag==0:
-                if flag==16:
-                    prnt(self.filename,'SEP flag #%s, corrupted aperture data, star discarded' % str(flag),alert=True)
-                    if verbose_errors:
-                        self.writeError('     in Photometry: Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
-                    indices_to_remove.append(i)
-                else:
-                    prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
-                    if verbose_errors:
-                        writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
+            r_out = 2.0*self.aperture_size            
             
-            # flux_annulus, fluxerr_annulus, flag_annulus = sep.sum_circann(img,self.source['x'][i], self.source['y'][i], r_in, r_out,gain=egain)
-            # bkg_mean = flux_annulus / (math.pi*(r_out*r_out-r_in*r_in))
-            # flux = flux - bkg_mean * (math.pi*self.aperture_size*self.aperture_size)
-            
+            ## manually measure annulus values
             annulus_values = []
-            for dx in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
-                for dy in range(-int(2*self.aperture_size),int(2*self.aperture_size)):
+            for dx in range(-int(r_out),int(r_out)):
+                for dy in range(-int(r_out),int(r_out)):
                     if np.sqrt(dx*dx+dy*dy)>r_in and np.sqrt(dx*dx+dy*dy)<r_out:
                         x_index = int(self.source['x'][i]+dx)
                         y_index = int(self.source['y'][i]+dy)
@@ -664,76 +672,133 @@ class Field:
                         except IndexError:
                             pass
             
+            ## cutoff outliers from the annulus
             if self.cutoff:
-                q75, q25 = np.percentile(annulus_values, [75 ,25])
-                iqr = q75 - q25
-                cutoff = np.mean(annulus_values)+1.5*iqr
-                annulus_values = [a for a in annulus_values if a<=cutoff]
+                for j in range(3): # iteratively remove outliers
+                    std = np.std(annulus_values)
+                    mean = np.mean(annulus_values)
+                    annulus_values = [a for a in annulus_values if a<=mean+3*std] # if outliers are above 3 std deviations 
             
-            bkg_mean = np.mean(annulus_values)
+            bkg_mean = np.mean(annulus_values) 
+            img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
+            
+            flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain)
 
-
-            # annulus = CircularAnnulus((self.source['x'][i],self.source['y'][i]),r_in,r_out)
-            # bkg_mean = aperture_photometry(img,annulus)['aperture_sum'][0] / annulus.area()
-            flux = flux - bkg_mean * math.pi * self.aperture_size * self.aperture_size
-
-
-            fluxerr = np.sqrt(fluxerr*fluxerr+np.sum(annulus_values))
+            ## check for error flags
+            if not flag==0:
+                if flag==16:
+                    prnt(self.filename,'SEP flag #%s, incomplete aperture data, star discarded' % str(flag),alert=True)
+                    if verbose_errors:
+                        self.writeError('     in Photometry: Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
+                    indices_to_remove.append(i)
+                else:
+                    prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
+                    if verbose_errors:
+                        writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
+            
             fluxes.append(flux)
             fluxerrs.append(fluxerr)
 
-        # get flux values from source extraction package
+        
         flux = np.array(fluxes)
-
-        for j in range(len(flux)): # if background subtraction isn't working correctly you can get negative flux values
+        ## check for negative values
+        for j in range(len(flux)):
             if flux[j]<0:
                 prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]),alert=True)
                 if verbose_errors:
                     self.writeError('     in Photometry: Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]))
                 indices_to_remove.append(j)
 
+        ## remove any objects flagged for removal 
         flux = np.delete(flux, (indices_to_remove), axis=0)
         indices_to_remove = np.append(indices_to_remove,objects_to_remove)
-        objects = np.delete(objects, (indices_to_remove), axis=0)
+        objects = np.delete(self.world, (indices_to_remove), axis=0)
 
-        instmag = -2.5*np.log10(flux) # convert flux to instrumental magnitude
+        imags = -2.5*np.log10(flux) # convert flux to instrumental magnitude
+        imags_err= 1/np.array(fluxerrs)
         # snr = np.sqrt(flux) # calculate the signal to noise ratio (SNR)
-        # instmag_err = 1/snr # convert SNR to the uncertainty in the instrumental magnitudes
+        # imags_err = 1/snr # convert SNR to the uncertainty in the instrumental magnitudes
 
-        instmag_err = 1/np.array(fluxerrs)
         prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
         print('')
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
+
+        ## check to make sure we have the same number of objects as we have fluxes
         if not len(flux)==len(objects):
             self.writeError('     in Photometry: Number objects and fluxes do not match, resulting data is unreliable')
-            raise Exception('Number object and fluxes do not match, resulting data not reliable. System exited')
+            raise Exception('Number object and fluxes do not match, resulting data not reliable. System quit')
 
-        ### retrieve magnitudes from catalog
+
+
+
+        #####################################################################################################################################################
+        ### query catalog
+        #####################################################################################################################################################
+        
+        v = Vizier(columns=['UCAC4','+_r','RAJ2000','DEJ2000','Bmag','Vmag','rmag']) # lookup data in the UCAC4 catalog by querying Vizier        
+
         time = hdr['DATE-OBS'] # time image was taken
         time = datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f') # convert string to datetime object
         filt = hdr['FILTER'] # filter of image
-
-        # lookup data in the UCAC4 catalog by querying Vizier
-        v = Vizier(columns=['UCAC4','+_r','RAJ2000','DEJ2000','Bmag','Vmag','rmag'])
         output = OrderedDict([('id',[]),('RA_C',[]),('DEC_C',[]),('RA_M',[]),('DEC_M',[]),('DIF',[]),('MAG_R',[]),('MAG_V',[]),('MAG_B',[]),('MAG_err',[]),('CMAG_R',[]),('CMAG_V',[]),('CMAG_B',[]),('DATETIME',[]),('IMGNAME',[]),('RUNTIME',[])])
-        output['MAG_err'] = instmag_err # go ahead and write the errors into the output dict
+        output['MAG_err'] = imags_err # go ahead and write the errors into the output dict
+        
         cmags = [] # catalog magnitudes list we will update in the loop
         misfires = 0 # number of errors 
         objects_indices_matched = [] # will store the indices in the objects list of the ones we match to the catalog, so that we only use those stars to calculate offset
 
-        for n in range(len(objects)):
-            catalog = 'UCAC4' # specify catalog 
-            #(if needed, we can implement a method to change this based on the object, which is why it is defined *inside* the loop)
-            
+        for n in range(len(objects)): # for each star
+            catalog = 'UCAC4'             
+            # submit query at object coordinates with a radius of 2 arcseconds
             result = v.query_region(coord.SkyCoord(ra=objects[n,0], dec=objects[n,1],
-            unit=(u.degree, u.degree), frame='fk5'),radius='2s',catalog=catalog) # submit query at object coordinates with a radius of 2 arcseconds
+            unit=(u.degree, u.degree), frame='fk5'),radius='3s',catalog=catalog) 
             
             try:
-                # query_region returns result which is a TableList and we only need the first Table in the List
                 result = result[0] # try to get the first result from the list of results (which is usually just 1 element)
-                # but if there are NO tables in the list...
-            except: # !! important, if we do not find a match we still save the data as this may be an anomoly or an object like an asteroid
-                prnt(self.filename,'No star match within 2 arcseconds')
+            except:
+                prnt(self.filename,'No star match within 3 arcseconds')
+                misfires += 1 
+                # manually fill in the data with mostly nan values 
+                output['id'].append('nan')
+                output['RA_C'].append('nan')
+                output['DEC_C'].append('nan')
+                output['RA_M'].append(objects[n,0])
+                output['DEC_M'].append(objects[n,1])
+                output['DIF'].append('nan')
+                output['DATETIME'].append(time)
+                output['IMGNAME'].append(self.filename)
+                output['RUNTIME'].append(strftime("%Y-%m-%d %H:%M GMT", gmtime()))
+                cmags.append('nan') 
+                continue # skip to the next object by moving to the next iteration of the loop
+
+            fluxtype = filt+'mag' # get a variable for fluxtype to match to catalog magnitude types
+            if filt=='R':
+                fluxtype = 'rmag'
+
+            ## get results from query
+            i = np.array(result['UCAC4'],str)[0] # get array of all the stars identified
+            mag = np.array(result[fluxtype],float)[0] # store the filter catalog magnitude for the stars matched
+            ra = np.array(result['RAJ2000'],float)[0] # get array of catalog RA for those stasr
+            dec = np.array(result['DEJ2000'],float)[0] # catalog Dec for those stars
+            dif = np.array(result['_r'],float)[0] # difference from target
+
+            ## write results if not already written
+            if i not in output['id']:
+                prnt(self.filename,'Star match in %s, mag %s, residual %s arcsec' % (catalog,mag,dif))
+                output['id'].append(i)
+                output['RA_C'].append(ra)
+                output['DEC_C'].append(dec)
+                output['RA_M'].append(objects[n,0])
+                output['DEC_M'].append(objects[n,1])
+                output['DIF'].append(dif)
+                output['DATETIME'].append(time)
+                output['IMGNAME'].append(self.filename)
+                output['RUNTIME'].append(strftime("%Y-%m-%d %H:%M GMT", gmtime()))
+                cmags.append(mag)
+                if not math.isnan(mag):
+                    objects_indices_matched.append(n)
+            else:
+                prnt(self.filename,'Star already matched')
                 misfires += 1 
                 # manually fill in the data with mostly nan (not a number) values 
                 output['id'].append('nan')
@@ -748,68 +813,48 @@ class Field:
                 cmags.append('nan') 
                 continue # skip to the next object by moving to the next iteration of the loop
 
-            # these lists are usually just 1 element but its important to have them to store every star located if we were looking in a very crowded field
-            ids = np.array(result['UCAC4'],str) # get array of all the stars identified
-            ra = np.array(result['RAJ2000'],float) # get array of catalog RA for those stasr
-            dec = np.array(result['DEJ2000'],float) # catalog Dec for those stars
-            dif = np.array(result['_r'],float) # difference from target
-            
-            fluxtype = filt+'mag' # get a variable for fluxtype to match to catalog magnitude types
-            if filt=='R':
-                fluxtype = 'rmag'
-            
-            flux = np.array(result[fluxtype],float) # store the filter catalog magnitude for the stars matched
-
-            for i in range(len(ids)): # for all the stars matched, 
-                if dif[i] <= 2 and i==np.argmin(dif) and ids[i] not in output['id']: # pick the star w the min residual value and less than 2 arcsec off and hasn't been identified yet
-                    prnt(self.filename,'Star match in %s, mag %s, residual %s arcsec' % (catalog,flux[i],dif[i]))
-                    output['id'].append(ids[i]) # add this data to the output dictionary 
-                    output['RA_C'].append(ra[i])
-                    output['DEC_C'].append(dec[i])
-                    output['RA_M'].append(objects[n,0])
-                    output['DEC_M'].append(objects[n,1])
-                    output['DIF'].append(dif[i])
-                    output['DATETIME'].append(time)
-                    output['IMGNAME'].append(self.filename)
-                    output['RUNTIME'].append(strftime("%Y-%m-%d %H:%M GMT", gmtime()))
-                    cmags.append(flux[i])
-                    if not math.isnan(flux[i]):
-                        objects_indices_matched.append(n)
-
-                else: # if the star has already been identified 
-                    prnt(self.filename,'No star match within 2 arcseconds')
-                    misfires += 1
-                    output['id'].append('nan')
-                    output['RA_C'].append('nan')
-                    output['DEC_C'].append('nan')
-                    output['RA_M'].append(objects[n,0])
-                    output['DEC_M'].append(objects[n,1])
-                    output['DIF'].append('nan')
-                    output['DATETIME'].append(time)
-                    output['IMGNAME'].append(self.filename)
-                    output['RUNTIME'].append(strftime("%Y-%m-%d %H:%M GMT", gmtime()))
-                    cmags.append('nan') 
-                    continue
-
-
         prnt(self.filename,'Output %s stars' % len(set([v for v in output['id'] if v!='nan'])))
         prnt(self.filename,'Missed %s objects' % misfires)    
-        instmags_to_median = [instmag[m] for m in objects_indices_matched] # instrumental magnitudes that matched to the catalog
-        # we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
 
-        if not len(instmags_to_median)==len(cmags_nonan): # the two lists above must be the same length to gaurantee that we are using the same stars for offset calculation
+
+
+        #####################################################################################################################################################
+        ### zero point / offset calculation
+        #####################################################################################################################################################
+    
+
+        ## we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
+        imags_cal = [imags[m] for m in objects_indices_matched] 
+        cmags_cal = [m for m in cmags if not math.isnan(float(m))]
+
+        ## pick out the top brightest magnitudes to consider in the offset since lower mags have higher uncertainty
+        # top_indices = []
+        # imags_test = [x for x in imags_cal]
+        # for j in range(15):
+        #     top_indices.append(np.argmin(imags_test))
+        #     imags_test[np.argmin(imags_test)]=999999999
+        
+        # imags_cal = [imags_cal[x] for x in top_indices]
+        # cmags_cal = [cmags_cal[x] for x in top_indices]
+
+
+        ## check to make sure that we are comparing mags of the same stars
+        if not len(imags_cal)==len(cmags_cal): 
             self.writeError('     in Photometry: Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
             raise Exception('Catalog comparison list not same length as instrumental magnitude list')
 
-        d = np.array(cmags_nonan) - np.array(instmags_to_median) # calculate the differences for each star
-        d = float(np.median(d)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
 
+        ## calculate frame zero point
+        zero_point = np.array(cmags_cal) - np.array(imags_cal) # calculate the differences for each star
+        zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
+    
+        ## write calibrated mags to output dict
         for i in ['R','V','B']: # for each filter
             magtype = 'MAG_'+i 
             if i==filt: # if that is the filter the image used
-                output[magtype] = instmag+d # set the output array as the intrumental magnitudes + the constant offset
+                output[magtype] = imags+zero_point # set the output array as the intrumental magnitudes + the constant offset
             else:
-                output[magtype] = np.full(np.shape(instmag),'---',dtype="S3") # otherwise fill with null values
+                output[magtype] = np.full(np.shape(imags),'---',dtype="S3") # otherwise fill with null values
 
         for i in ['R','V','B']: # same thing
             magtype = 'CMAG_'+i 
@@ -818,13 +863,9 @@ class Field:
             else:
                 output[magtype] = np.full(np.shape(cmags),'---',dtype="S3") # otherwise fill with null values
 
-        
         prnt(self.filename,'Wrote magnitude data to sources.csv') 
-        sleep(3)
         print(' ')
-        sleep(1)
-
-        header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
+        sleep(4)
         
         return output
 
