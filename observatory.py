@@ -720,11 +720,11 @@ class Field:
         indices_to_remove,objects_to_remove = [],[]
         fluxes,fluxerrs = [],[]
 
-        self.aperture_size = float(self.aperture_size) / float(hdr['XBINNING'])
-        print(self.aperture_size)
+        aperture_size = float(self.aperture_size) / float(hdr['XBINNING'])
+        print(aperture_size)
         for i in range(len(self.source)):
-            r_in = 1.5*self.aperture_size
-            r_out = 2.0*self.aperture_size            
+            r_in = 1.5*aperture_size
+            r_out = 2.0*aperture_size            
             
             ## manually measure annulus values
             annulus_values = []
@@ -748,7 +748,7 @@ class Field:
             bkg_mean = np.mean(annulus_values) 
             img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
 
-            flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain,subpix=0)
+            flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], aperture_size,gain=egain,subpix=0)
 
             ## check for error flags
             if not flag==0:
