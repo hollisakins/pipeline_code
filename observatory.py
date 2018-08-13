@@ -745,6 +745,8 @@ class Field:
                     annulus_values = [a for a in annulus_values if a<=mean+3*std] # if outliers are above 3 std deviations 
 
             bkg_mean = np.mean(annulus_values) 
+            print(img)
+            print(img_temp)
             img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
 
             flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain,subpix=0)
@@ -760,7 +762,7 @@ class Field:
                     prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
                     if verbose_errors:
                         writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
-            print(flux)
+
             fluxes.append(flux)
             fluxerrs.append(fluxerr)
 
@@ -781,7 +783,7 @@ class Field:
 
         imags = -2.5*np.log10(flux) # convert flux to instrumental magnitude
         imags_err= 1/np.array(fluxerrs) # includes Poisson noise
-        print(imags)
+
         prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
         print('')
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
