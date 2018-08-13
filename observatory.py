@@ -515,6 +515,7 @@ class Field:
 
     def Initialize(self,day):
         '''Index the files we need to calibrate -- must be run before other methods such as Reduce(), Extract(), etc.'''
+
         self.calibrated_path = 'Calibrated Images/'
         self.uncalibrated_path = 'ArchSky/'
         header('Initialization') # print the header
@@ -759,7 +760,7 @@ class Field:
                     prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
                     if verbose_errors:
                         writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
-            
+            print(flux)
             fluxes.append(flux)
             fluxerrs.append(fluxerr)
 
@@ -780,7 +781,7 @@ class Field:
 
         imags = -2.5*np.log10(flux) # convert flux to instrumental magnitude
         imags_err= 1/np.array(fluxerrs) # includes Poisson noise
-
+        print(imags)
         prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
         print('')
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
@@ -912,9 +913,9 @@ class Field:
         mags = imags+zero_point
         mags_err = np.sqrt(imags_err*imags_err+zero_point_err*zero_point_err)
 
-        prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(mags),np.mean(mags)))
+        prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(mags),np.mean([x for x in mags if not math.isnan(x)])))
         
-        
+        print(mags)
         ## write calibrated mags to output dict
         output['MAG_err'] = mags_err # go ahead and write the errors into the output dict
         for i in ['R','V','B']: # for each filter
