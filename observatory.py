@@ -721,7 +721,7 @@ class Field:
         fluxes,fluxerrs = [],[]
 
         aperture_size = float(self.aperture_size) / float(hdr['XBINNING'])
-        print(aperture_size)
+
         for i in range(len(self.source)):
             r_in = 1.5*aperture_size
             r_out = 2.0*aperture_size            
@@ -916,7 +916,7 @@ class Field:
 
         prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(mags),np.mean([x for x in mags if not math.isnan(x)])))
         
-        print(mags)
+
         ## write calibrated mags to output dict
         output['MAG_err'] = mags_err # go ahead and write the errors into the output dict
         for i in ['R','V','B']: # for each filter
