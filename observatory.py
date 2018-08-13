@@ -657,8 +657,8 @@ class Field:
         indices_to_remove,objects_to_remove = [],[]
         fluxes,fluxerrs = [],[]
 
+        self.aperture_size = float(self.aperture_size) / float(hdr['XBINNING'])
         for i in range(len(self.source)):
-            self.aperture_size = self.aperture_size / hdr['XBINNING']
             r_in = 1.5*self.aperture_size
             r_out = 2.0*self.aperture_size            
             
@@ -680,10 +680,10 @@ class Field:
                     std = np.std(annulus_values)
                     mean = np.mean(annulus_values)
                     annulus_values = [a for a in annulus_values if a<=mean+3*std] # if outliers are above 3 std deviations 
-            
+
             bkg_mean = np.mean(annulus_values) 
             img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
-            
+
             flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain)
 
             ## check for error flags
@@ -701,7 +701,7 @@ class Field:
             fluxes.append(flux)
             fluxerrs.append(fluxerr)
 
-        
+
         flux = np.array(fluxes)
         ## check for negative values
         for j in range(len(flux)):
@@ -823,7 +823,7 @@ class Field:
         #####################################################################################################################################################
         ### zero point / offset calculation
         #####################################################################################################################################################
-    
+
 
         ## we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
         imags_cal = [imags[m] for m in objects_indices_matched] 
@@ -849,7 +849,8 @@ class Field:
         ## calculate frame zero point
         zero_point = np.array(cmags_cal) - np.array(imags_cal) # calculate the differences for each star
         zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
-    
+
+
         ## write calibrated mags to output dict
         for i in ['R','V','B']: # for each filter
             magtype = 'MAG_'+i 
