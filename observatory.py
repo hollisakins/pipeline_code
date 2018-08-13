@@ -42,6 +42,67 @@ slow = False # if slow=True it will pause between printing each line just to mak
 days_old = 1
 verbose_errors = False
 
+def sendError(message):
+    from email.MIMEMultipart import MIMEMultipart
+    import smtplib
+    from email.MIMEText import MIMEText
+    from email.MIMEBase import MIMEBase
+    from email import encoders
+
+    # set up the SMTP server
+    s = smtplib.SMTP('smtp.gmail.com', 587)
+    s.starttls()
+    print('\tFatal error, sending email alert')
+    sleep(0.5)
+    address = 'gcdatapipeline@gmail.com'
+    password = '**Mintaka'
+
+    s.login(address,password)
+
+    msg = MIMEMultipart()
+    msg['From'] = 'Guilford College Cline Observatory'
+    msg['Subject'] = "Fatal Error: GC Data Pipeline %s" % strftime("%Y-%m-%d", localtime())
+    
+    body = """<font="Courier">
+    <b><h2>Fatal Error in Pipeline Run:</h2></b>
+    <br />
+    Today's pipeline run encountered a fatal error and did not finish. <br />
+    Here is the error message:<br />
+    <br />
+    Error time: %s <br />
+    %s <br />
+    <br />
+    Attached is the full error log. </font>
+    """ % (strftime("%H:%M EST", localtime()), message)
+    
+    msg.attach(MIMEText(body, 'html'))
+    filename = 'errorlog.txt'
+    with open(filename,'rb') as attachment:    
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload((attachment).read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', "attachment; filename= %s" % filename)
+        msg.attach(part)
+
+    text = msg.as_string()
+
+    recipients = open('email_recipients.txt','r').read().splitlines()
+
+    all_recipients = recipients[0]
+    for x in range(1,len(recipients)):
+        all_recipients += ', '+recipients[x]
+
+    print('\tSending error message to %s\n' % all_recipients)
+    sleep(1)
+
+    
+
+    for recipient in recipients:
+        msg['To'] = recipient
+        s.sendmail(address, recipient, text)
+    s.quit()
+
+
 def sendStatus():
     from email.MIMEMultipart import MIMEMultipart
     import smtplib
@@ -523,7 +584,7 @@ class Field:
 
     def Reduce(self,inPipeline=False):
         self.isCalibrated = False
-	if inPipeline:
+        if inPipeline:
             header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
         
         light_h,light = self.hdr,self.img # bring up the hdr and image
@@ -728,8 +789,10 @@ class Field:
 
         ## check to make sure we have the same number of objects as we have fluxes
         if not len(flux)==len(objects):
-            self.writeError('     in Photometry: Number objects and fluxes do not match, resulting data is unreliable')
-            raise Exception('Number object and fluxes do not match, resulting data not reliable. System quit')
+            self.writeError('     fatal error in Photometry: Number objects and fluxes do not match, resulting data is unreliable. System quit')
+            exception = 'in image %s: Number objects to match to catalog and number and fluxes calculated do not match, resulting data not reliable' % self.filename
+            sendError(exception)
+            raise Exception(exception)
 
 
 
@@ -829,34 +892,92 @@ class Field:
         ## we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
         imags_cal = [imags[m] for m in objects_indices_matched] 
         cmags_cal = [m for m in cmags if not math.isnan(float(m))]
-
-        ## pick out the top brightest magnitudes to consider in the offset since lower mags have higher uncertainty
-        # top_indices = []
-        # imags_test = [x for x in imags_cal]
-        # for j in range(15):
-        #     top_indices.append(np.argmin(imags_test))
-        #     imags_test[np.argmin(imags_test)]=999999999
-        
-        # imags_cal = [imags_cal[x] for x in top_indices]
-        # cmags_cal = [cmags_cal[x] for x in top_indices]
-
-
         ## check to make sure that we are comparing mags of the same stars
         if not len(imags_cal)==len(cmags_cal): 
-            self.writeError('     in Photometry: Catalog comparison list not same length as instrumental magnitude list. Photometry halted')
-            raise Exception('Catalog comparison list not same length as instrumental magnitude list')
+            self.writeError('     fatal error in Photometry: Catalog comparison list not same length as instrumental magnitude list. System quit')
+            exception = 'in image %s: catalog comparison list not same length as instrumental magnitude list, resulting calibrated magnitudes unreliable' % self.filename
+            sendError(exception)
+            raise Exception(exception)
 
+        prnt(self.filename,'Using %s stars in offset calculation' % len(imags_cal))
+        bins = [25,50,75,100]
+        imag_bins = []
+        cmag_bins = []
+        prev = 0
+        for x in bins:
+            imags_temp = [imags_cal[i] for i in range(len(imags_cal)) if imags_cal[i]<=np.percentile(imags_cal,x) and imags_cal[i]>np.percentile(imags_cal,prev)]
+            imag_bins.append(imags_temp)
+            cmags_temp = [cmags_cal[i] for i in range(len(cmags_cal)) if imags_cal[i]<=np.percentile(imags_cal,x) and imags_cal[i]>np.percentile(imags_cal,prev)]
+            cmag_bins.append(cmags_temp)
+            prev = x
+
+
+        zero_points = []
+        for x in range(len(imag_bins)):
+            zero_point = np.array(cmag_bins[x])-np.array(imag_bins[x])
+            for j in range(3): # iteratively remove outliers
+                std = np.std(zero_point)
+                mean = np.mean(zero_point)
+                zero_point = [a for a in zero_point if a<=mean+3*std] # if outliers are above 3 std deviations 
+            zero_point = np.mean(zero_point)
+            zero_points.append(zero_point)
+
+
+        prev = 0
+        for x in range(len(bins)):    
+            for i in range(len(imags)):
+                if imags[i]<=np.percentile(imags_cal,bins[x]) and imags[i]>=np.percentile(imags_cal,prev):
+                    imags[i] += zero_points[x]
+            prev = bins[x]
+        
+        # for i in imags:
+        #     if i<0:
+        #         raise Exception('Uncalibrated instrumental magnitude')
+        
+        prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(imags),np.mean(imags)))
+        # zero_point_bottom50 = np.array(cmags_bottom50) - np.array(imags_bottom50)
+        # zero_point_top50 = np.array(cmags_top50) - np.array(imags_top50)
+
+        # for j in range(3): # iteratively remove outliers
+        #     std = np.std(zero_point_bottom50)
+        #     mean = np.mean(zero_point_bottom50)
+        #     zero_point_bottom50 = [a for a in zero_point_bottom50 if a<=mean+3*std] # if outliers are above 3 std deviations 
+
+        # for j in range(3): # iteratively remove outliers
+        #     std = np.std(zero_point_top50)
+        #     mean = np.mean(zero_point_top50)
+        #     zero_point_top50 = [a for a in zero_point_top50 if a<=mean+3*std] # if outliers are above 3 std deviations 
+
+        # import matplotlib.pyplot as plt
+        # plt.hist(zero_point_bottom50, bins=8)  # arguments are passed to np.histogram
+        # plt.savefig(self.filename.replace('.fits','._bottom50.png'))
+        # plt.clf()
+        # plt.hist(zero_point_top50, bins=8)  # arguments are passed to np.histogram
+        # plt.savefig(self.filename.replace('.fits','._top50.png'))
+        # plt.clf()
+
+        # zero_point_bottom50 = np.mean(zero_point_bottom50)
+        # zero_point_top50 = np.mean(zero_point_top50)
+
+        # for i in range(len(imags)):
+        #     if imags[i]<=np.percentile(imags,50):
+        #         imags[i] += zero_point_bottom50
+        #     elif imags[i]>np.percentile(imags,50):
+        #         imags[i] += zero_point_top50
 
         ## calculate frame zero point
-        zero_point = np.array(cmags_cal) - np.array(imags_cal) # calculate the differences for each star
-        zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
+        # zero_point = np.array(cmags_cal) - np.array(imags_cal) # calculate the differences for each star
+        
+        
+
+        # zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
 
 
         ## write calibrated mags to output dict
         for i in ['R','V','B']: # for each filter
             magtype = 'MAG_'+i 
             if i==filt: # if that is the filter the image used
-                output[magtype] = imags+zero_point # set the output array as the intrumental magnitudes + the constant offset
+                output[magtype] = imags # set the output array as the intrumental magnitudes + the constant offset
             else:
                 output[magtype] = np.full(np.shape(imags),'---',dtype="S3") # otherwise fill with null values
 
