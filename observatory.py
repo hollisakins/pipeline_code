@@ -721,6 +721,7 @@ class Field:
         fluxes,fluxerrs = [],[]
 
         self.aperture_size = float(self.aperture_size) / float(hdr['XBINNING'])
+        print(self.aperture_size)
         for i in range(len(self.source)):
             r_in = 1.5*self.aperture_size
             r_out = 2.0*self.aperture_size            
@@ -743,7 +744,6 @@ class Field:
                     std = np.std(annulus_values)
                     mean = np.mean(annulus_values)
                     annulus_values = [a for a in annulus_values if a<=mean+3*std] # if outliers are above 3 std deviations 
-            print(annulus_values)
             
             bkg_mean = np.mean(annulus_values) 
             img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
