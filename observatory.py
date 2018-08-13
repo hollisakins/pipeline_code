@@ -522,7 +522,8 @@ class Field:
 
 
     def Reduce(self,inPipeline=False):
-        if inPipeline:
+        self.isCalibrated = False
+	if inPipeline:
             header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
         
         light_h,light = self.hdr,self.img # bring up the hdr and image
@@ -622,10 +623,10 @@ class Field:
 
         bkg = sep.Background(img)
         bkg_data = bkg.back()
-        bkg_rms = bkg.globalrms
+        bkg_rms = bkg.rms()
 
         img = img - bkg_data
-        objects = sep.extract(img, 2, err=bkg.globalrms,minarea=90/hdr['XBINNING']/hdr['YBINNING'])
+        objects = sep.extract(img, 4, err=bkg_rms,minarea=120/hdr['XBINNING']/hdr['YBINNING'])
         prnt(self.filename,'Source detection complete with %s objects' % str(len(objects)))
         return objects
 

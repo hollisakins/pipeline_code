@@ -149,7 +149,7 @@ while True:
             coords_ra = coords_ra.split(':')
             RA = float(coords_ra[0])*15+float(coords_ra[1])/4+float(coords_ra[2])/240
             coords_dec = coords_dec.split(':')
-            DEC = float(coords_dec[0])+float(coords_dec[1])/60+float(coords_dec[2])/60/60
+            DEC = float(coords_dec[0])+np.sign(float(coords_dec[0]))*float(coords_dec[1])/60+np.sign(float(coords_dec[0]))*float(coords_dec[2])/60/60
 
         else:
             coords = raw_input("\tRA and DEC coordinates in decimal degrees (format 'RA,DEC'): ")
