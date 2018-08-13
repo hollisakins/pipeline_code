@@ -52,7 +52,7 @@ def sendError(message):
     # set up the SMTP server
     s = smtplib.SMTP('smtp.gmail.com', 587)
     s.starttls()
-    print('\tFatal error, sending email alert')
+    print('Fatal error, sending email alert')
     sleep(0.5)
     address = 'gcdatapipeline@gmail.com'
     password = '**Mintaka'
@@ -92,7 +92,7 @@ def sendError(message):
     for x in range(1,len(recipients)):
         all_recipients += ', '+recipients[x]
 
-    print('\tSending error message to %s\n' % all_recipients)
+    print('Sending error message to %s\n' % all_recipients)
     sleep(1)
 
     
@@ -132,7 +132,7 @@ def sendStatus():
     # set up the SMTP server
     s = smtplib.SMTP('smtp.gmail.com', 587)
     s.starttls()
-    print('\tEstablished SMTP server')
+    print('Established SMTP server')
     sleep(0.5)
     address = 'gcdatapipeline@gmail.com'
     password = '**Mintaka'
@@ -189,7 +189,7 @@ def sendStatus():
     for x in range(1,len(recipients)):
         all_recipients += ', '+recipients[x]
 
-    print('\tSending message to %s\n' % all_recipients)
+    print('Sending message to %s\n' % all_recipients)
     sleep(1)
     print(printing)
     
