@@ -746,8 +746,8 @@ class Field:
 
             bkg_mean = np.mean(annulus_values) 
             print(img)
-            print(img_temp)
             img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
+            print(img_temp)
 
             flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain,subpix=0)
 
