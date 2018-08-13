@@ -746,7 +746,7 @@ class Field:
             bkg_mean = np.mean(annulus_values) 
             img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
 
-            flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain)
+            flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], self.aperture_size,gain=egain,subpix=0)
 
             ## check for error flags
             if not flag==0:
@@ -779,9 +779,7 @@ class Field:
         objects = np.delete(self.world, (indices_to_remove), axis=0)
 
         imags = -2.5*np.log10(flux) # convert flux to instrumental magnitude
-        imags_err= 1/np.array(fluxerrs)
-        # snr = np.sqrt(flux) # calculate the signal to noise ratio (SNR)
-        # imags_err = 1/snr # convert SNR to the uncertainty in the instrumental magnitudes
+        imags_err= 1/np.array(fluxerrs) # includes Poisson noise
 
         prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
         print('')
@@ -807,7 +805,7 @@ class Field:
         time = datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f') # convert string to datetime object
         filt = hdr['FILTER'] # filter of image
         output = OrderedDict([('id',[]),('RA_C',[]),('DEC_C',[]),('RA_M',[]),('DEC_M',[]),('DIF',[]),('MAG_R',[]),('MAG_V',[]),('MAG_B',[]),('MAG_err',[]),('CMAG_R',[]),('CMAG_V',[]),('CMAG_B',[]),('DATETIME',[]),('IMGNAME',[]),('RUNTIME',[])])
-        output['MAG_err'] = imags_err # go ahead and write the errors into the output dict
+        
         
         cmags = [] # catalog magnitudes list we will update in the loop
         misfires = 0 # number of errors 
@@ -892,6 +890,7 @@ class Field:
         ## we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
         imags_cal = [imags[m] for m in objects_indices_matched] 
         cmags_cal = [m for m in cmags if not math.isnan(float(m))]
+        
         ## check to make sure that we are comparing mags of the same stars
         if not len(imags_cal)==len(cmags_cal): 
             self.writeError('     fatal error in Photometry: Catalog comparison list not same length as instrumental magnitude list. System quit')
@@ -900,84 +899,28 @@ class Field:
             raise Exception(exception)
 
         prnt(self.filename,'Using %s stars in offset calculation' % len(imags_cal))
-        bins = [25,50,75,100]
-        imag_bins = []
-        cmag_bins = []
-        prev = 0
-        for x in bins:
-            imags_temp = [imags_cal[i] for i in range(len(imags_cal)) if imags_cal[i]<=np.percentile(imags_cal,x) and imags_cal[i]>np.percentile(imags_cal,prev)]
-            imag_bins.append(imags_temp)
-            cmags_temp = [cmags_cal[i] for i in range(len(cmags_cal)) if imags_cal[i]<=np.percentile(imags_cal,x) and imags_cal[i]>np.percentile(imags_cal,prev)]
-            cmag_bins.append(cmags_temp)
-            prev = x
-
-
-        zero_points = []
-        for x in range(len(imag_bins)):
-            zero_point = np.array(cmag_bins[x])-np.array(imag_bins[x])
-            for j in range(3): # iteratively remove outliers
-                std = np.std(zero_point)
-                mean = np.mean(zero_point)
-                zero_point = [a for a in zero_point if a<=mean+3*std] # if outliers are above 3 std deviations 
-            zero_point = np.mean(zero_point)
-            zero_points.append(zero_point)
-
-
-        prev = 0
-        for x in range(len(bins)):    
-            for i in range(len(imags)):
-                if imags[i]<=np.percentile(imags_cal,bins[x]) and imags[i]>=np.percentile(imags_cal,prev):
-                    imags[i] += zero_points[x]
-            prev = bins[x]
         
-        # for i in imags:
-        #     if i<0:
-        #         raise Exception('Uncalibrated instrumental magnitude')
+        zero_point = np.array(cmags_cal) - np.array(imags_cal) # calculate the differences for each star
+        for j in range(3): # iteratively remove outliers
+            std = np.std(zero_point)
+            mean = np.mean(zero_point)
+            zero_point = [a for a in zero_point if a<=mean+3*std] # if outliers are above 3 std deviations 
         
-        prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(imags),np.mean(imags)))
-        # zero_point_bottom50 = np.array(cmags_bottom50) - np.array(imags_bottom50)
-        # zero_point_top50 = np.array(cmags_top50) - np.array(imags_top50)
+        zero_point_err = np.std(zero_point)
+        zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
 
-        # for j in range(3): # iteratively remove outliers
-        #     std = np.std(zero_point_bottom50)
-        #     mean = np.mean(zero_point_bottom50)
-        #     zero_point_bottom50 = [a for a in zero_point_bottom50 if a<=mean+3*std] # if outliers are above 3 std deviations 
+        mags = imags+zero_point
+        mags_err = np.sqrt(imags_err*imags_err+zero_point_err*zero_point_err)
 
-        # for j in range(3): # iteratively remove outliers
-        #     std = np.std(zero_point_top50)
-        #     mean = np.mean(zero_point_top50)
-        #     zero_point_top50 = [a for a in zero_point_top50 if a<=mean+3*std] # if outliers are above 3 std deviations 
-
-        # import matplotlib.pyplot as plt
-        # plt.hist(zero_point_bottom50, bins=8)  # arguments are passed to np.histogram
-        # plt.savefig(self.filename.replace('.fits','._bottom50.png'))
-        # plt.clf()
-        # plt.hist(zero_point_top50, bins=8)  # arguments are passed to np.histogram
-        # plt.savefig(self.filename.replace('.fits','._top50.png'))
-        # plt.clf()
-
-        # zero_point_bottom50 = np.mean(zero_point_bottom50)
-        # zero_point_top50 = np.mean(zero_point_top50)
-
-        # for i in range(len(imags)):
-        #     if imags[i]<=np.percentile(imags,50):
-        #         imags[i] += zero_point_bottom50
-        #     elif imags[i]>np.percentile(imags,50):
-        #         imags[i] += zero_point_top50
-
-        ## calculate frame zero point
-        # zero_point = np.array(cmags_cal) - np.array(imags_cal) # calculate the differences for each star
+        prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(mags),np.mean(mags)))
         
         
-
-        # zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
-
-
         ## write calibrated mags to output dict
+        output['MAG_err'] = mags_err # go ahead and write the errors into the output dict
         for i in ['R','V','B']: # for each filter
             magtype = 'MAG_'+i 
             if i==filt: # if that is the filter the image used
-                output[magtype] = imags # set the output array as the intrumental magnitudes + the constant offset
+                output[magtype] = mags # set the output array as the intrumental magnitudes + the constant offset
             else:
                 output[magtype] = np.full(np.shape(imags),'---',dtype="S3") # otherwise fill with null values
 
