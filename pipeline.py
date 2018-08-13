@@ -16,7 +16,7 @@ f = obs.Field()
 # f.path_to_masters = 'MasterCal/'
 # f.uncalibrated_path = 'ArchSky/'
 # f.calibrated_path = 'Calibrated Images/'
-f.aperture_size = 15 #(default 30)
+f.aperture_size = 30 #(default 30)
 # f.cutoff = False #(default True)
 # f.max_temp = -2.0 #(default -3.0)
 
