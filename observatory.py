@@ -565,11 +565,17 @@ class Field:
         else:
             return 'Size'
 
-    def writeToHeader(self,h):
+    def writeToHeader(self,h,dark=False,flat=False,bias=False):
         if h.get('CALSTAT',default=0)==0: # if there is no calstat field in the header
             h.append(('CALSTAT','BDF','Status of Calibration')) # add one
         else:
             h['CALSTAT']='BDF' # otherwise set the value of calstat to BDF
+        
+        for x in [dark,flat,bias]:
+            if not x:
+                pass
+            else:
+                h.append(('HISTORY','GC data pipeline correction with %s' % x,strftime("%Y-%m-%d %H:%M GMT", gmtime())))
 
     def saveFits(self,h,data,filename,inPipeline=True):
         if inPipeline:
@@ -599,8 +605,9 @@ class Field:
             self.narrowBand = False
 
         # open bias frame
+        bias_filename = self.path_to_masters+'bias_master.fit'
         try: 
-            bias_fits = fits.open(self.path_to_masters+'bias_master.fit') 
+            bias_fits = fits.open(bias_filename) 
             prnt(self.filename,'Successfully opened bias master %s' % self.path_to_masters+'bias_master.fit')
         except: # if you encounter error
             prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit')
@@ -612,8 +619,9 @@ class Field:
         bias = bias_fits[0].data
 
         # open dark frame
+        dark_filename = self.path_to_masters+'dark_master.fit'
         try:
-            dark_fits = fits.open(self.path_to_masters+'dark_master.fit') 
+            dark_fits = fits.open(dark_filename) 
             prnt(self.filename,'Successfully opened dark master %s' % self.path_to_masters+'dark_master.fit')
         except:
             prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit')
@@ -628,8 +636,9 @@ class Field:
         exptime = light_h['EXPTIME'] # store light image exposure time
 
         # open filter-specific flat field
+        flat_filename = self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit'
         try: 
-            flat_fits = fits.open(self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit') 
+            flat_fits = fits.open(flat_filename) 
             prnt(self.filename,'Successfully opened '+self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
         except:
             prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
@@ -649,16 +658,17 @@ class Field:
             dark_corrected_image = bias_corrected_image - (exptime/dxptime) * dark # scale the dark linearly w/ exptime and subtract
             final_image = dark_corrected_image / flat # divide by the flat field (already normalized)
             
-            self.writeToHeader(light_h)
+            self.writeToHeader(light_h,flat=flat_filename,bias=bias_filename,dark=dark_filename)
             self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
 
         elif self.checkCalibration(light_h,light)=='OnlyDark': # if we only had an auto dark
             prnt(self.filename,'Calibrating image...' )
             
-            final_image = light / flat # divide by the flat field
+            bias_corrected_image = light - bias
+            final_image = bias_corrected_image / flat # divide by the flat field
 
-            self.writeToHeader(light_h)
+            self.writeToHeader(light_h,bias=bias_filename,flat=flat_filename)
             self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
 
@@ -908,7 +918,7 @@ class Field:
             mean = np.mean(zero_point)
             zero_point = [a for a in zero_point if a<=mean+3*std] # if outliers are above 3 std deviations 
         
-        zero_point_err = np.std(zero_point)
+        zero_point_err = np.std(zero_point)/np.sqrt(len(zero_point))
         zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
 
         mags = imags+zero_point
