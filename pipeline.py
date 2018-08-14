@@ -13,9 +13,9 @@ try:
     #obs.days_old = 2 #(default 1)
     # obs.verbose_errors = True #(default False, uncomment if haing difficulties in automated pipeline run)
 
-    # obs.dailyCopy(overwrite=False)
+    obs.dailyCopy(overwrite=False)
 
-    # obs.makeMasters(inPipeline=True,writeOver=False) 
+    obs.makeMasters(inPipeline=True,writeOver=False) 
 
     f = obs.Field()
     # f.path_to_masters = 'MasterCal/'
