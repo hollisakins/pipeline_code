@@ -1,6 +1,9 @@
-#
-#
-#
+# This module controls all of the pipeline functionality
+# /please/ do not edit this without permission from Hollis or Don
+# if you want to test changes to the code it is all available on github at
+# https://github.com/hollisakins/pipeline_code
+# 
+# if you are looking to change variables please change them from pipeline.py with the module.variable or object.variable syntax
 
 
 import sys
@@ -847,32 +850,47 @@ class Field:
 
 
     #####################################################################################################################################################
-    ### detect sources
+    ### source detection, WCS data, and photometry
     #####################################################################################################################################################
 
     def Source(self):
+        '''
+        Internal function.
+        Detects sources found in the image.
+        '''
+        
         hdr,img = self.hdr,self.img
 
-        bkg = sep.Background(img)
+        bkg = sep.Background(img) # get 2D array of background
         bkg_data = bkg.back()
         bkg_rms = bkg.rms()
 
-        img = img - bkg_data
-        objects = sep.extract(img, 4, err=bkg_rms,minarea=120/hdr['XBINNING']/hdr['YBINNING'])
+        img = img - bkg_data # subtract background temporarily 
+        
+        # detect objects with a threshold of 4*bkg_rms and minimum area of 120 pixels at binning 1x1
+        objects = sep.extract(img, 4, err=bkg_rms,minarea=120/hdr['XBINNING']/hdr['YBINNING']) 
+
         prnt(self.filename,'Source detection complete with %s objects' % str(len(objects)))
         return objects
 
 
-    def Convert(self): # converts obj list in pixel coordinate to RA-dec coordinates
+    def Convert(self): 
+        '''
+        Internal function.
+        Converts object coordinates list from pixel coordinate to RA-dec coordinates using WCS data in image header.
+        '''
         hdr = self.hdr
+        
+        # test to see if there exists WCS info in the header
         try:
             test = hdr['WCSVER']
         except KeyError:
             return 'NOWCS'
         
         w = wcs.WCS(hdr) # gets WCS matrix from the header
-        coords = zip(self.source['x'],self.source['y'])
+        coords = zip(self.source['x'],self.source['y']) # combine x and y coords into single array
         world = w.wcs_pix2world(coords, 1) # World Coorindate System function converts matrix in fits header to RA/Dec
+
         prnt(self.filename,'Converted source coordinates from pixel to world')
         return world
 
@@ -883,25 +901,25 @@ class Field:
 
         #####################################################################################################################################################
         ### perform aperture photometry
-        #####################################################################################################################################################
         
         prnt(self.filename,'Performing aperture photometry...')
 
-        indices_to_remove,objects_to_remove = [],[]
+        indices_to_remove = [] # for removing bad data
         fluxes,fluxerrs = [],[]
-
+        
+        # define aperture size relative to binning
         aperture_size = float(self.aperture_size) / float(hdr['XBINNING'])
+        r_in = 1.5*aperture_size
+        r_out = 2.0*aperture_size            
 
+        # loop through each source and get flux within aperture
         for i in range(len(self.source)):
-            r_in = 1.5*aperture_size
-            r_out = 2.0*aperture_size            
-            
-            ## manually measure annulus values
+            # manually measure annulus values
             annulus_values = []
             for dx in range(-int(r_out),int(r_out)):
-                for dy in range(-int(r_out),int(r_out)):
-                    if np.sqrt(dx*dx+dy*dy)>r_in and np.sqrt(dx*dx+dy*dy)<r_out:
-                        x_index = int(self.source['x'][i]+dx)
+                for dy in range(-int(r_out),int(r_out)): # two for loops makes a square with sides 2*r_out
+                    if np.sqrt(dx*dx+dy*dy)>r_in and np.sqrt(dx*dx+dy*dy)<r_out: # if the distance from center is within annulus boundaries
+                        x_index = int(self.source['x'][i]+dx) 
                         y_index = int(self.source['y'][i]+dy)
                         try:
                             annulus_values.append(img[y_index,x_index])
@@ -918,46 +936,65 @@ class Field:
             bkg_mean = np.mean(annulus_values) 
             img_temp = img - bkg_mean # create temporary image with bkg removed from each pixel
 
+            # perform aperture photometry
             flux, fluxerr, flag = sep.sum_circle(img_temp, self.source['x'][i], self.source['y'][i], aperture_size,gain=egain,subpix=0)
 
-            ## check for error flags
+
+
+            #####################################################################################################################################################
+            ### perform checks to remove bad data
+            
+            # check for error flags returned in aperture photometry
+                # SExtractor flags:
+                    # 1     The object has neighbors, bright and close enough to 
+                    #       significantly bias the photometry, or bad pixels 
+                    #       (more than 10% of the integrated area affected).
+                    # 2     The object was originally blended with another one.
+                    # 4     At least one pixel of the object is saturated 
+                    #       (or very close to).
+                    # 8     The object is truncates (to close to an image boundary).
+                    # 16    Object's aperture data are incomplete or corrupted.
+                    # 32    Object's isophotal data are incomplete or corrupted.
+                    # 64    A memory overflow occurred during deblending.
+                    # 128   A memory overflow occurred during extraction.
+                    # An object close to an image border may have FLAGS = 16, 
+                    # or perhaps FLAGS = 8+16+32 = 56.
             if not flag==0:
-                if flag==16:
-                    prnt(self.filename,'SEP flag #%s, incomplete aperture data, star discarded' % str(flag),alert=True)
+                if flag>7:
+                    prnt(self.filename,'SEP flag #%s, star discarded' % str(flag),alert=True)
                     if verbose_errors:
                         self.writeError('     in Photometry: Source Extractor flag #%s, star discarded from aperture photometry' % str(flag))
                     indices_to_remove.append(i)
                 else:
                     prnt(self.filename,'SEP flag #%s' % str(flag),alert=True)
                     if verbose_errors:
-                        writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
+                        self.writeError('     in Photometry: Source Extractor flag #%s' % str(flag))
+            
+            # check for negative flux values
+            if flux<0:
+                prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][i],self.source['y'][i]),alert=True)
+                if verbose_errors:
+                    self.writeError('     in Photometry: Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][i],self.source['y'][i]))
+                indices_to_remove.append(i)
 
             fluxes.append(flux)
             fluxerrs.append(fluxerr)
 
 
-        flux = np.array(fluxes)
-        ## check for negative values
-        for j in range(len(flux)):
-            if flux[j]<0:
-                prnt(self.filename,'Negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]),alert=True)
-                if verbose_errors:
-                    self.writeError('     in Photometry: Calculated negative flux at pixel position (%s,%s), star discarded' % (self.source['x'][j],self.source['y'][j]))
-                indices_to_remove.append(j)
-
         ## remove any objects flagged for removal 
+        flux = np.array(fluxes)
         flux = np.delete(flux, (indices_to_remove), axis=0)
-        indices_to_remove = np.append(indices_to_remove,objects_to_remove)
         objects = np.delete(self.world, (indices_to_remove), axis=0)
 
-        imags = -2.5*np.log10(flux) # convert flux to instrumental magnitude
+        # convert flux to instrumental magnitude
+        imags = -2.5*np.log10(flux) 
         imags_err= 1/np.array(fluxerrs) # includes Poisson noise
 
         prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
         print('')
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
 
-        ## check to make sure we have the same number of objects as we have fluxes
+        # check to make sure we have the same number of objects as we have fluxes
         if not len(flux)==len(objects):
             self.writeError('     fatal error in Photometry: Number objects and fluxes do not match, resulting data is unreliable. System quit')
             exception = 'in image %s: Number objects to match to catalog and number and fluxes calculated do not match, resulting data not reliable' % self.filename
@@ -965,11 +1002,8 @@ class Field:
             raise Exception(exception)
 
 
-
-
         #####################################################################################################################################################
         ### query catalog
-        #####################################################################################################################################################
         
         v = Vizier(columns=['UCAC4','+_r','RAJ2000','DEJ2000','Bmag','Vmag','rmag']) # lookup data in the UCAC4 catalog by querying Vizier        
 
@@ -983,8 +1017,10 @@ class Field:
         misfires = 0 # number of errors 
         objects_indices_matched = [] # will store the indices in the objects list of the ones we match to the catalog, so that we only use those stars to calculate offset
 
-        for n in range(len(objects)): # for each star
-            catalog = 'UCAC4'             
+        # query each star
+        for n in range(len(objects)): 
+            catalog = 'UCAC4'    
+            
             # submit query at object coordinates with a radius of 2 arcseconds
             result = v.query_region(coord.SkyCoord(ra=objects[n,0], dec=objects[n,1],
             unit=(u.degree, u.degree), frame='fk5'),radius='3s',catalog=catalog) 
@@ -1011,14 +1047,14 @@ class Field:
             if filt=='R':
                 fluxtype = 'rmag'
 
-            ## get results from query
-            i = np.array(result['UCAC4'],str)[0] # get array of all the stars identified
-            mag = np.array(result[fluxtype],float)[0] # store the filter catalog magnitude for the stars matched
-            ra = np.array(result['RAJ2000'],float)[0] # get array of catalog RA for those stasr
-            dec = np.array(result['DEJ2000'],float)[0] # catalog Dec for those stars
+            # get results from query
+            i = np.array(result['UCAC4'],str)[0] # get star id 
+            mag = np.array(result[fluxtype],float)[0] # get catalog mag for specific filter
+            ra = np.array(result['RAJ2000'],float)[0] # get RA from catalog
+            dec = np.array(result['DEJ2000'],float)[0] # get DEC from catalog
             dif = np.array(result['_r'],float)[0] # difference from target
 
-            ## write results if not already written
+            # write results if not already written
             if i not in output['id']:
                 prnt(self.filename,'Star match in %s, mag %s, residual %s arcsec' % (catalog,mag,dif))
                 output['id'].append(i)
@@ -1056,14 +1092,12 @@ class Field:
 
         #####################################################################################################################################################
         ### zero point / offset calculation
-        #####################################################################################################################################################
 
-
-        ## we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
+        # we only want to use these instrumental magnitudes to calculate the offset since we have catalog mags for them
         imags_cal = [imags[m] for m in objects_indices_matched] 
         cmags_cal = [m for m in cmags if not math.isnan(float(m))]
         
-        ## check to make sure that we are comparing mags of the same stars
+        # check to make sure that we are comparing mags of the same stars
         if not len(imags_cal)==len(cmags_cal): 
             self.writeError('     fatal error in Photometry: Catalog comparison list not same length as instrumental magnitude list. System quit')
             exception = 'in image %s: catalog comparison list not same length as instrumental magnitude list, resulting calibrated magnitudes unreliable' % self.filename
@@ -1072,23 +1106,19 @@ class Field:
 
         prnt(self.filename,'Using %s stars in offset calculation' % len(imags_cal))
         
+        # calculate zero point
         zero_point = np.array(cmags_cal) - np.array(imags_cal) # calculate the differences for each star
-        for j in range(3): # iteratively remove outliers
-            std = np.std(zero_point)
-            mean = np.mean(zero_point)
-            zero_point = [a for a in zero_point if a<=mean+3*std] # if outliers are above 3 std deviations 
-        
-        zero_point_err = np.std(zero_point)/np.sqrt(len(zero_point))
+        zero_point_err = np.std(zero_point)/np.sqrt(len(zero_point)) # zero point error is standard error of all differences
         zero_point = float(np.median(zero_point)) # take the MEDIAN of the difference - median does not consider outliers so a single variable star in the mix won't mess up our constant offset
 
-        mags = imags+zero_point
-        mags_err = np.sqrt(imags_err*imags_err+zero_point_err*zero_point_err)
+        mags = imags+zero_point # update instrumental magnitudes
+        mags_err = np.sqrt(imags_err*imags_err+zero_point_err*zero_point_err) # add in quadrature the aperture photometry error and the zero point error
 
         prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(mags),np.mean([x for x in mags if not math.isnan(x)])))
         
+        # write calibrated mags to output dict
+        output['MAG_err'] = mags_err 
 
-        ## write calibrated mags to output dict
-        output['MAG_err'] = mags_err # go ahead and write the errors into the output dict
         for i in ['R','V','B']: # for each filter
             magtype = 'MAG_'+i 
             if i==filt: # if that is the filter the image used
@@ -1106,8 +1136,12 @@ class Field:
         prnt(self.filename,'Wrote magnitude data to sources.csv') 
         print(' ')
         sleep(4)
-        
         return output
+
+    
+    #####################################################################################################################################################
+    ### plot images with an ellipse around each detected star (rarely used)
+    #####################################################################################################################################################
 
     def Plot(self):
         import matplotlib.pyplot as plt
