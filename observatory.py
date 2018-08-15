@@ -1,15 +1,31 @@
+#
+#
+#
+
+
+import sys
+vers = '%s.%s' % (sys.version_info[0],sys.version_info[1])
+if not vers=='2.7':
+    raise Exception("Must be using Python 2.7")
+
+
+
+#####################################################################################################################################################
+### import dependent packages
+#####################################################################################################################################################
+
 # standard packages
 import numpy as np 
 import math 
 import os # for interacting with the terminal 
 import warnings # for suppressing warnings
 import csv # for reading/writing from csv files
-import sys # for interacting with the computer, shutting down the program, etc
 import shutil # solely for copying .SRC files between directories 
 from datetime import datetime,timedelta
 from time import strftime, gmtime, strptime, sleep, localtime
 import datetime as dt
 from collections import OrderedDict # make Python 2.7 dictionary act like 3.6 dictionary 
+import pandas as pd
 
 # astro packages
 from astropy.io import fits # fits module for opening and writing to fits files
@@ -19,50 +35,66 @@ import astropy.coordinates as coord # for inputting coordinates into Vizier
 import astropy.units as u # for units for the coord module
 import sep # source extraction package based on the SExtractor application
 
-def checkversion():
-    vers = '%s.%s' % (sys.version_info[0],sys.version_info[1])
-    if not vers=='2.7':
-        raise Exception("Must be using Python 2.7")
+# email packages
+from email.MIMEMultipart import MIMEMultipart
+import smtplib
+from email.MIMEText import MIMEText
+from email.MIMEBase import MIMEBase
+from email import encoders
 
-# defines the width of the console to print output more clearly 
+
+
+#####################################################################################################################################################
+### define variables and other housekeeping things
+#####################################################################################################################################################
+
+# defines variable for the the width of the console to print output more clearly 
 rows, columns = os.popen('stty size', 'r').read().split()
 termsize = int(columns)
 
-# astropy gives warning for a depricated date format in TheSkyX fits header,
-# we dont need to see that so these two lines supress all warnings
-# comment them out when testing
 
+# astropy gives warning for a depricated date format in TheSkyX fits header, we dont need to see that so these two lines supress all warnings
+# comment them out when testing
 warnings.catch_warnings() 
 warnings.simplefilter('ignore')
 
+
+# define the start and end times as empty strings which will be updated by pipeline.py for email update
 start_time = ''
 end_time = ''
 
-slow = False # if slow=True it will pause between printing each line just to make it easier to read, good for testing since it can go really fast
-days_old = 1
-verbose_errors = False
+# variable definitions (do not change here, change from pipeline.py)
+slow = False 
+days_old = 1 
+verbose_errors = False 
+
+
+
+#####################################################################################################################################################
+### define email update functions (for remote monitoring)
+#####################################################################################################################################################
 
 def sendError(message):
-    from email.MIMEMultipart import MIMEMultipart
-    import smtplib
-    from email.MIMEText import MIMEText
-    from email.MIMEBase import MIMEBase
-    from email import encoders
-
+    '''Sends an email to recipients listed in email_recipients.txt whenever the program encounters an unexpected and fatal error '''
+    
     # set up the SMTP server
     s = smtplib.SMTP('smtp.gmail.com', 587)
     s.starttls()
+
     print('Fatal error, sending email alert')
     sleep(0.5)
-    address = 'gcdatapipeline@gmail.com'
+
+    # log into the gmail account
+    address = 'gcdatapipeline@gmail.com' 
     password = '**Mintaka'
+    s.login(address,password) 
 
-    s.login(address,password)
-
+    # begin the message
     msg = MIMEMultipart()
     msg['From'] = 'Guilford College Cline Observatory'
     msg['Subject'] = "Fatal Error: GC Data Pipeline %s" % strftime("%Y-%m-%d", localtime())
     
+    # begin body of message with HTML formatting
     body = """<font="Courier">
     <b><h2>Fatal Error in Pipeline Run:</h2></b>
     <br />
@@ -75,7 +107,10 @@ def sendError(message):
     Attached is the full error log. </font>
     """ % (strftime("%H:%M EST", localtime()), message)
     
+    # add the body message to the string
     msg.attach(MIMEText(body, 'html'))
+    
+    # attach the error log
     filename = 'errorlog.txt'
     with open(filename,'rb') as attachment:    
         part = MIMEBase('application', 'octet-stream')
@@ -83,36 +118,35 @@ def sendError(message):
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', "attachment; filename= %s" % filename)
         msg.attach(part)
-
     text = msg.as_string()
 
-    recipients = open('email_recipients.txt','r').read().splitlines()
+    # open receipients file and store as list
+    with open('email_recipients.txt','r') as f:
+        recipients = f.read().splitlines()
 
+    # make string of receipients just to print it out cleanly
     all_recipients = recipients[0]
     for x in range(1,len(recipients)):
         all_recipients += ', '+recipients[x]
-
     print('Sending error message to %s\n' % all_recipients)
     sleep(1)
 
-    
-
+    # for each recipient, change 'To' variable and send message
     for recipient in recipients:
         msg['To'] = recipient
         s.sendmail(address, recipient, text)
+    
+    # quit SMTP server
     s.quit()
 
 
 def sendStatus():
-    from email.MIMEMultipart import MIMEMultipart
-    import smtplib
-    from email.MIMEText import MIMEText
-    from email.MIMEBase import MIMEBase
-    from email import encoders
+    '''Run's at the end of the pipeline to send a summary of the run to recipients listed in email_recipients.txt'''
 
+    # print header
     header('Sending Update')
-    import pandas as pd
     
+    # read CSV file with output data
     with open('sources.csv') as csvFile:
         reader = csv.reader(csvFile)
         keys = next(reader)
@@ -122,6 +156,7 @@ def sendStatus():
         dictionary[i]=np.array(df[i])
     sources = dictionary
 
+    # define variables using list comprehension from the output data
     images_processed = len(np.unique([sources['IMGNAME'][x] for x in range(len(sources['IMGNAME'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
     stars_logged = len(np.unique([sources['id'][x] for x in range(len(sources['id'])) if isinstance(sources['RUNTIME'][x],str) and datetime.strptime(sources['RUNTIME'][x],"%Y-%m-%d %H:%M GMT").day==datetime.utcnow().day]))
     if not images_processed==0:
@@ -134,15 +169,18 @@ def sendStatus():
     s.starttls()
     print('Established SMTP server')
     sleep(0.5)
+
+    # login to the gmail account
     address = 'gcdatapipeline@gmail.com'
     password = '**Mintaka'
-
     s.login(address,password)
 
+    # begin the message
     msg = MIMEMultipart()
     msg['From'] = 'Guilford College Cline Observatory'
     msg['Subject'] = "GC Data Pipeline Update %s" % strftime("%Y-%m-%d", localtime())
     
+    # begin the body of the message with HTML formatting and including variables
     body = """<font="Courier">
     <b><h2>Today's Pipeline Run:</h2></b>
     <br />
@@ -154,6 +192,7 @@ def sendStatus():
 
     """ % (start_time,end_time,images_processed,stars_logged,stars_not_matched)
     
+    # same thing but without HTML
     printing = """Today's Pipeline Run:\n
     Began %s 
     Completed %s
@@ -164,6 +203,7 @@ def sendStatus():
 
     body += "Here are the log entries for today's run:\n<p style='font-size:8pt;'>"
 
+    # include summary of error log for today
     filename = "errorlog.txt"
     with open(filename,'rb') as attachment:    
         for line in attachment:
@@ -174,35 +214,48 @@ def sendStatus():
     body += '\n</p>Attached is the full error log</font>'
     msg.attach(MIMEText(body, 'html'))
         
+    # attach full error log
     with open(filename,'rb') as attachment:    
         part = MIMEBase('application', 'octet-stream')
         part.set_payload((attachment).read())
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', "attachment; filename= %s" % filename)
         msg.attach(part)
-
     text = msg.as_string()
 
-    recipients = open('email_recipients.txt','r').read().splitlines()
+    # open recipient file
+    with open('email_recipients.txt','r') as f:
+        recipients = f.read().splitlines()
 
+    # make string for recipients for printing it out
     all_recipients = recipients[0]
     for x in range(1,len(recipients)):
         all_recipients += ', '+recipients[x]
-
     print('Sending message to %s\n' % all_recipients)
     sleep(1)
     print(printing)
     
-
+    # for each recipient, send message
     for recipient in recipients:
         msg['To'] = recipient
         s.sendmail(address, recipient, text)
+
+    # quit SMTP server
     s.quit()
 
 
-# function for printing the output consistently 
+
+#####################################################################################################################################################
+### define housekeeping functions for printing the output
+#####################################################################################################################################################
+
 def prnt(indent,strng,filename=False,alert=False):
-    # if filename=True it will print the name of the file at the left
+    '''
+    Internal function.
+    Prints the ouput of the pipeline in a consistent way, using the length of the indent variable as the indent for the line and printing the strng variable. 
+    If filename = True, it will print the filename as the indent. If alert = True it will put exclamation points in the line. 
+    '''
+
     if alert:
         if slow:
             if not filename:
@@ -230,8 +283,14 @@ def prnt(indent,strng,filename=False,alert=False):
             else: 
                 print(indent+': '+strng)
 
-# simple function to print a line at the top of the screen that shows what process is going on 
+
 def header(i,count=False):
+    '''
+    Internal function.
+    Prints a header at the top of the screen that shows what process is going on
+    Takes a count argument to show a counter of images processed and how many total
+    '''
+
     print('\033c')
     if not count:
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
@@ -241,28 +300,53 @@ def header(i,count=False):
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
         print('')
 
+
+
+#####################################################################################################################################################
+### function to write error to error log
+#####################################################################################################################################################
+
 def writeError(description):
+    '''Writes description to errorlog.txt'''
     name = 'errorlog.txt'
-    if not os.path.exists(name):
-        with open(name,'w') as erlog:
+    if not os.path.exists(name): # if the file doesn't exist,
+        with open(name,'w') as erlog: # create it
             pass
-    with open(name,'a') as erlog:
-        time = strftime("%Y-%m-%d %H:%M GMT", gmtime())
-        description = time+': '+description+'\n'
-        erlog.write(description)
+
+    with open(name,'a') as erlog: # with the file open
+        time = strftime("%Y-%m-%d %H:%M GMT", gmtime()) # define time
+        description = time+': '+description+'\n' # add time to description
+        erlog.write(description) # write desciption 
 
 
-def dailyCopy(overwrite=False):
+
+#####################################################################################################################################################
+### daily image copying
+#####################################################################################################################################################
+
+def dailyCopy(writeOver=False):
+    ''' 
+    Copies files from dome computer to linus computer i.e. D:\Calibration\ ==> /data1/ArchCal and D:\SkyImages\ ==> /data1/ArchSky.
+    Takes argument writeOver to determine whether files are overwritten if ArchSky/[date] or ArchCal/[date] already exists.
+    '''
+    
     header('Copying Files')
+    
+    # define paths
     copys = ['Calibration/','SkyImages/']
     archives = ['ArchCal/','ArchSky/']
 
+    # copy each directory in a loop (only 2 iterations since only 2 directories)
     for i in range(2):
         print('\tCopying from %s ' % copys[i])
         sleep(1.5)
-        all_dates = [f for f in os.listdir(copys[i]) if not f.startswith('.') and not os.path.isfile(f)]
-        recent_dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
-        dates = list(set(all_dates) & set(recent_dates))
+        
+        # index the dates and find which match our days_old criteria
+        all_dates = [f for f in os.listdir(copys[i]) if not f.startswith('.') and not os.path.isfile(f)] # all dates found in the Windows folder
+        recent_dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)] # date names we are looking for based on days_old
+        dates = list(set(all_dates) & set(recent_dates)) # combination of the two shows which match
+        
+        # string math for printing
         recent_dates_str = ''
         for x in recent_dates:
             recent_dates_str += x+' '
@@ -271,34 +355,39 @@ def dailyCopy(overwrite=False):
         for x in dates:
             dates_str += x+' '
 
+        # if no dates found
         if dates_str.strip()=='':
             print('\tNo directories in %s matched %s\n' % (copys[i],recent_dates_str))
+            sleep(1) 
+            continue # skip to next day in loop
         else:
             print('\tLooking for dates %s found %s in %s' % (recent_dates_str,dates_str,copys[i]))
         
         sleep(2)
-        dates_src = [copys[i]+date+'/' for date in dates]
-        dates_dst = [archives[i]+date+'/' for date in dates]
+        dates_src = [copys[i]+date+'/' for date in dates] # paths for directories to copy
+        dates_dst = [archives[i]+date+'/' for date in dates] # paths for directories to copy *to*
 
+        # loop through each directory and copy the files
         for j in range(len(dates_src)):
             print('\tAttempting copy of %s' % dates_src[j])
             writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
             sleep(2)
             try:
-                shutil.copytree(dates_src[j],dates_dst[j])
-            except:
-                if overwrite:
-                    if os.path.exists(dates_dst[j]):
+                shutil.copytree(dates_src[j],dates_dst[j]) # copy files from source to destination
+            except: # if encounter an error
+                if writeOver: # if you want to overwrite 
+                    if os.path.exists(dates_dst[j]): # then delete the file 
                         shutil.rmtree(dates_dst[j])
-                        shutil.copytree(dates_src[j], dates_dst[j])
-                    print('\tDirectory %s already exists, overwriting' % dates_dst[j])
+                        shutil.copytree(dates_src[j], dates_dst[j]) # and try to copy again
+                    print('\tDirectory %s already exists, overwriting' % dates_dst[j]) 
                     sleep(3)
                     writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
-                else:
-                    print('\tDirectory %s already exists, skipping' % dates_dst[j])
+                else: # if you dont want to overwrite 
+                    print('\tDirectory %s already exists, skipping' % dates_dst[j]) # skip it
                     sleep(3)
                     writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
-            else:
+                    continue # skip to  next day
+            else: # if you don't encounter an error
                 print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
                 sleep(3)
                 writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
@@ -308,30 +397,31 @@ def dailyCopy(overwrite=False):
             print('')
 
 
-
-
-
-
-
+#####################################################################################################################################################
+### make master calibration files
+#####################################################################################################################################################
 
 def makeMasters(directory=str,inPipeline=False,writeOver=False):
-    '''Index calibration files and generate masters. 
-
+    '''
+    Index calibration files and generate masters. 
     Searches for calibration files in the most recent date directory under 'ArchCal/'. 
     For example, makeMasters() will search 'ArchCal/20180701/' if that is the most recent date directory available.
-
-    Opt. Argument writeOver=False can be changed to True to allow older bias & dark frames to be
-    over written by more recent ones.
+    Opt. argument directory can be changed to specify a directory other than 'ArchCal/'.
+    If inPipeline=False, will not look for specific date folders but will rather just search the directory argument
+    Opt. argument writeOver=False can be changed to True to allow older bias & dark frames to be over written by more recent ones.
     '''
+    # index folders of calibration files
     if inPipeline:
         dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
         dates = ['ArchCal/'+date+'/' for date in dates]
     else:
         dates = np.array([directory])
 
+    # loop through each date path and make masters
     for path_to_cal in dates:
         header('Making Masters')
 
+        # if you cannot find date path, skip day
         if not os.path.exists(path_to_cal):
             sleep(1.5)
             print('\tNo calibration date folder found %s' % path_to_cal)
@@ -341,7 +431,10 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
             sleep(3)
             continue
 
+        # search filenames in date path
         filenames = [f for f in os.listdir(path_to_cal) if os.path.isfile(os.path.join(path_to_cal,f)) if not f.startswith('.')] # list of filenames to process
+
+        # if no files in that date folder, skip the day 
         if len(filenames)==0:
             sleep(1.5)
             print('\tNo images in %s' % path_to_cal)
@@ -351,37 +444,38 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
             writeError('     in makeMasters: No images in %s, skipped makeMasters' % path_to_cal)
             continue
 
+        #####################################################################################################################################################
+        ### search and sort calibration files
+
         print('\tSearching %s for calibraton files...' % path_to_cal)
         print('\tIndexed %s files' % len(filenames))
-        binnings = ['1','2','3','4']
-
-        bias1,dark1,Red1,Green1,Blue1,R1,V1,B1,Halpha1,Lum1,filters1 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-        bias2,dark2,Red2,Green2,Blue2,R2,V2,B2,Halpha2,Lum2,filters2 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-        bias3,dark3,Red3,Green3,Blue3,R3,V3,B3,Halpha3,Lum3,filters3 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
-        bias4,dark4,Red4,Green4,Blue4,R4,V4,B4,Halpha4,Lum4,filters4 = [],[],[],[],[],[],[],[],[],[],[] # initialize lists
+        
         # lists are used to store the filename for each calibration file and then combine into a master
+        binnings = ['1','2','3','4']
+        for j in binnings: # initialize lists
+            exec("bias"+j+",dark"+j+",Red"+j+",Green"+j+",Blue"+j+",R"+j+",V"+j+",B"+j+",Halpha"+j+",Lum"+j+",filters"+j+" = [],[],[],[],[],[],[],[],[],[],[]") 
 
         print('\tSorting files...')
 
-        # sort the calibration images by type and store them in arrays
-        for filename in filenames:
+        # sort the calibration filenames by type and store them in the lists
+        for filename in filenames: # for each filename
             with fits.open(path_to_cal+filename) as hdulist: 
-                hdr = hdulist[0].header
+                hdr = hdulist[0].header # get the fits header
                 typ = hdr['IMAGETYP'] # save image type as variable
-                binn = hdr['XBINNING'] # save binning as variable
+                binn = str(hdr['XBINNING']) # save binning as variable
                 if typ=='Bias Frame':
-                    exec('bias'+str(binn)+'_header=hdr') # save the header to write back into the master
-                    exec('bias'+str(binn)+'.append(filename)') # add the data to the list with respective type/binning
+                    exec('bias'+binn+'_header=hdr') # save the header to write back into the master
+                    exec('bias'+binn+'.append(filename)') # add the data to the list with respective type/binning
                 if typ=='Dark Frame':
-                    exec('dark'+str(binn)+'_header=hdr')
-                    exec('dark'+str(binn)+'.append(filename)')
+                    exec('dark'+binn+'_header=hdr')
+                    exec('dark'+binn+'.append(filename)')
                 if typ=='Flat Field':
-                    exec(hdr['FILTER']+str(binn)+'_header=hdr')
-                    exec('filters'+str(binn)+".append(hdr['FILTER'])") # store the filters found in this directory in a list
+                    exec(hdr['FILTER']+binn+'_header=hdr')
+                    exec('filters'+binn+".append(hdr['FILTER'])") # store the filters found in this directory in a list
                     # so that we don't attempt to create new master flats with filters we did not have raw flats for
-                    exec(hdr['FILTER']+str(binn)+'.append(filename)') 
+                    exec(hdr['FILTER']+binn+'.append(filename)') 
 
-
+        # print what was detected
         print('')
         print('\tIndexed files:        Binning1x1  Binning2x2  Binning3x3  Binning4x4')
         print('\t\tBias:             %s          %s          %s          %s' % (len(bias1),len(bias2),len(bias3),len(bias4)))
@@ -396,23 +490,24 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
         print('\t\tLum Flat:         %s          %s          %s          %s' % (len(Lum1),len(Lum2),len(Lum3),len(Lum4)))
         print('')
 
-
-
-        ## make the masters
-        for i in binnings: # for each binning factor 
+        
+        #####################################################################################################################################################
+        ### make master calibration files
+        
+        for i in binnings: 
             exec('s=np.size(bias'+i+')') # define var s as the size of the list
             if not s==0: # if the size is nonzero, there is data for that type & binning
                 exec('filenames = bias'+i)
                 master = []
-                for filename in filenames:
+                for filename in filenames: # for each filename
                     with fits.open(path_to_cal+filename) as hdulist:
                         img = hdulist[0].data
-                        master.append(img)
-                exec('bias'+i+'_master=np.median(np.array(master),axis=0)') # define bias master as the 
-                print('\tConstructed a master bias with binning %sx%s' % (i,i))
+                        master.append(img) # add the image data to the master list
+                exec('bias'+i+'_master=np.median(np.array(master),axis=0)') # define bias master as the median of each fame
+                print('\tConstructed a master bias with binning %sx%s' % (i,i)) 
 
         for i in binnings:
-            exec('s=np.size(dark'+i+')')
+            exec('s=np.size(dark'+i+')') 
             if not s==0:
                 try: # try to  make dark master
                     exec('filenames = dark'+i)
@@ -421,10 +516,10 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                         with fits.open(path_to_cal+filename) as hdulist:
                             img = hdulist[0].data
                             master.append(img)
-                    exec('dark'+i+'_master=np.median(np.array(master)-bias'+i+'_master,axis=0)') # make dark master by removing the bias first
+                    exec('dark'+i+'_master=np.median(np.array(master)-bias'+i+'_master,axis=0)') # define the dark amster as the median of each frame with the bias already removed
                     print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
-                except NameError: # if you get a NameError:
-                    print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i))
+                except NameError: # you get a NameError if it cannot find the bias master variable
+                    print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i)) # can't make the master dark without a bias
                     writeError('     in makeMasters: No bias master for binning %sx%s, failed to create dark' % (i,i))
 
         for j in binnings: 
@@ -441,29 +536,34 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                             img = hdulist[0].data
                             master.append(img)
                     master = np.array(master)
-                    exec("master = master - bias"+j+"_master")
-                    exec("master = master - dark"+j+"_master * fxptime / dxptime")
-                    exec(i+j+"_master = np.median(master,axis=0)/np.max(np.median(master,axis=0))")  # normalize flat field and make master
+                    exec("master = master - bias"+j+"_master") # subtract the bias from each flat frame
+                    exec("master = master - dark"+j+"_master * fxptime / dxptime") # subtract the dark from each flat frame
+                    exec(i+j+"_master = np.median(master,axis=0)/np.max(np.median(master,axis=0))")  # define the flat field as the median of each frame normalized to the maximum
                     print('\tConstructed master %s flat with binning %sx%s' % (i,j,j))
         
 
-        # write the masters to fits files
+        #####################################################################################################################################################
+        ### write the masters to fits files
+
         for i in binnings:
             for j in ['bias','dark']: 
-                if j+i+'_master' in locals():
+                if j+i+'_master' in locals(): # if the local variable is defined
                     try:
-                        code = "fits.writeto('MasterCal/binning"+i+'/'+j+"_master.fit',"+j+i+'_master, header='+j+i+'_header,overwrite='+str(writeOver)+')'
+                        code = "fits.writeto('MasterCal/binning"+i+'/'+j+"_master.fit',"+j+i+'_master, header='+j+i+'_header,overwrite='+str(writeOver)+')' # write to MasterCal/binningi
                         exec(code)
                         print('\tWrote master %s to file MasterCal/binning%s/%s_master.fit' % (j,i,j))   
                     except:
                         print('\tBias or dark master already exists, no new file written')
 
-        for i in ['1','2','3','4']:
-            exec('f=np.unique(filters'+i+')')
-            for j in f: 
-                code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite="+str(writeOver)+")"
-                exec(code)   
-                print('\tWrote master %s flat to file MasterCal/binning%s/flat_master_%s.fit' % (j,i,j))
+        for i in binnings:
+            exec('f=np.unique(filters'+i+')') 
+            for j in f: # for each unique filter
+                try:
+                    code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite="+str(writeOver)+")"
+                    exec(code)   
+                    print('\tWrote master %s flat to file MasterCal/binning%s/flat_master_%s.fit' % (j,i,j))
+                except:
+                    print('\t%s Flat master already exists, no new file written' % j)
         
         print('\n\tComplete')
         sleep(3)
@@ -471,29 +571,38 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
 
 
 
+
+#####################################################################################################################################################
+### per image operations contained withing Field object
+#####################################################################################################################################################
+
 class Field:
     def __init__(self):
         # when a Field object is created, define some variables
-        self.calibrated_path = 'Calibrated Images/' 
-        self.uncalibrated_path = 'ArchSky/'
-        self.path_to_masters = 'MasterCal/'
-        self.isCalibrated = False
-        self.aperture_size = 30.0
-        self.max_temp = -3.0
-        self.cutoff = True
-        self.counter = 0
+        # these variables can be changed from pipeline.py after defining the field object
+        self.calibrated_path = 'Calibrated Images/' # path where calibrated images are saved
+        self.uncalibrated_path = 'ArchSky/' # path where uncalibrated images are found
+        self.path_to_masters = 'MasterCal/' # path where masters are found
+        self.max_temp = -3.0 # maximum temp for calibration
+        self.isCalibrated = False # variable defining whether the image is calibrated yet
+        self.aperture_size = 30.0 # aperture size for photometry
+        self.cutoff = True # cutoff outliers from annulus for photometry 
+        self.counter = 0 # counter for how many images we have processed in this run 
     
-
+    #####################################################################################################################################################
+    ### open a fits file 
+    #####################################################################################################################################################
+    
     def openFits(self,filename,calibrated=False,inPipeline=False):
         self.filename = filename
-        if not inPipeline:
-            self.uncalibrated_path = '' # portable functionality
+        if not inPipeline: # portable functionality if we aren't running this command from inside the pipeline
+            self.uncalibrated_path = '' 
             self.calibrated_path = ''
         if not calibrated: # if it hasnt been calibrated we need the uncalibrated path 
             with fits.open(self.uncalibrated_path+self.filename) as hdulist:
                 self.hdr = hdulist[0].header
                 img = hdulist[0].data
-                self.img = np.array(img,dtype='<f4') 
+                self.img = np.array(img,dtype='<f4') # change dtype because of SourceExtractor (sep) 
         else: # otherwise we need the calibrated path
             with fits.open(self.calibrated_path+self.filename.replace('.fits','_calibrated.fits')) as hdulist:
                 self.hdr = hdulist[0].header
@@ -501,7 +610,26 @@ class Field:
                 self.img = np.array(img,dtype='<f4')
 
     
+    #####################################################################################################################################################
+    ### save fits files after calibration
+    #####################################################################################################################################################
 
+    def saveFits(self,h,data,filename,inPipeline=True): 
+        if inPipeline:
+            if not os.path.exists(self.calibrated_path): 
+                os.makedirs(self.calibrated_path) # make a directory if there isnt one
+        else:
+            self.calibrated_path = ''
+        fits.writeto(self.calibrated_path+filename.replace(".fit","_calibrated.fit"),data,h,overwrite=True)
+        prnt(self.filename,'Wrote file to '+self.calibrated_path)
+        print(' ')
+        self.isCalibrated = True # now its calibrated so we change this variable to True
+    
+
+    #####################################################################################################################################################
+    ### for writingErrors to the error log (different than the function before because this includes filename)
+    #####################################################################################################################################################
+    
     def writeError(self,description):
         name = 'errorlog.txt'
         if not os.path.exists(name):
@@ -513,46 +641,12 @@ class Field:
             erlog.write(description)
 
 
-    def Initialize(self,day):
-        '''Index the files we need to calibrate -- must be run before other methods such as Reduce(), Extract(), etc.'''
-
-        self.calibrated_path = 'Calibrated Images/'
-        self.uncalibrated_path = 'ArchSky/'
-        header('Initialization') # print the header
-        self.columnsWritten = True # if we need to write the columns into the sources.csv file
-        
-        dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
-        self.uncalibrated_path = [self.uncalibrated_path+date+'/' for date in dates][day]
-        self.calibrated_path = [self.calibrated_path+date+'/' for date in dates][day]
-        # if no path for uncalibrated images, exit
-        if not os.path.exists(self.uncalibrated_path):
-            print('\tNo images found in %s' % self.uncalibrated_path)
-            sleep(1)
-            print('\tExiting...')
-            sleep(1.5)
-            print("\033c")
-            writeError('     in Initialize: Path %s does not exist, exiting pipeline run for today' % self.uncalibrated_path)
-            return False
-
-        # if no path for calibrated images, make one
-        if not os.path.exists(self.calibrated_path):
-            os.makedirs(self.calibrated_path)
-
-
-        # all_files = [f for f in os.listdir(self.uncalibrated_path) if os.path.isfile(os.path.join(self.uncalibrated_path,f)) and not f.startswith('.')]
-        self.list_of_files = [f.strip() for f in os.listdir(self.uncalibrated_path) if  not f.startswith('.') and os.path.isfile(os.path.join(self.uncalibrated_path,f)) and f.endswith('.fits') or f.endswith('.fit')]
-        # self.list_of_files  = [f.strip() for f in all_files if f.endswith('.fits') or f.endswith('.fit')]
-
-        # src_files = [f for f in all_files if f.endswith('.SRC')]
-        print('\tSearching %s for sky images...' % self.uncalibrated_path)
-        sleep(1)
-        print('\tSearching %s for calibration files...' % self.path_to_masters)
-        sleep(1)
-        print('\033c')
-        return True
+    #####################################################################################################################################################
+    ### check if image needs to be calibrated
+    #####################################################################################################################################################
 
     def checkCalibration(self,h,image): # check to see whether or not we need to calibrate the file
-        if np.size(image)==8487264 or np.size(image)==2121816 or np.size(image)==942748: 
+        if np.size(image)==8487264 or np.size(image)==2121816 or np.size(image)==942748: # sizes for our three binning factors that we will use
             if h['CCD-TEMP']<=self.max_temp: 
                 if h.get('CALSTAT',default=0)==0: 
                     return True # True means we calibrate
@@ -564,6 +658,11 @@ class Field:
                 return 'Temp'    
         else:
             return 'Size'
+
+
+    #####################################################################################################################################################
+    ### write calibration to the header
+    #####################################################################################################################################################
 
     def writeToHeader(self,h,dark=False,flat=False,bias=False):
         if h.get('CALSTAT',default=0)==0: # if there is no calstat field in the header
@@ -577,56 +676,104 @@ class Field:
             else:
                 h.append(('HISTORY','GC data pipeline correction with %s' % x,strftime("%Y-%m-%d %H:%M GMT", gmtime())))
 
-    def saveFits(self,h,data,filename,inPipeline=True):
-        if inPipeline:
-            if not os.path.exists(self.calibrated_path): 
-                os.makedirs(self.calibrated_path) # make a directory if there isnt one
-        else:
-            self.calibrated_path = ''
-        fits.writeto(self.calibrated_path+filename.replace(".fit","_calibrated.fit"),data,h,overwrite=True)
-        prnt(self.filename,'Wrote file to '+self.calibrated_path)
-        print(' ')
-        self.isCalibrated = True # now its calibrated so we change this variable to True
 
+    #####################################################################################################################################################
+    ### initialize the pipeline process by indexing the files to be processed
+    #####################################################################################################################################################
+
+    def Initialize(self,day):
+        '''Index the files we need to calibrate -- must be run before other methods such as Reduce(), Extract(), etc.'''
+
+        self.calibrated_path = 'Calibrated Images/'
+        self.uncalibrated_path = 'ArchSky/'
+
+        header('Initialization') # print the header
+        self.columnsWritten = True # if we need to write the columns into the sources.csv file
+        
+        # index dates according to days old
+        dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
+        self.uncalibrated_path = [self.uncalibrated_path+date+'/' for date in dates][day]
+        self.calibrated_path = [self.calibrated_path+date+'/' for date in dates][day]
+
+        # if no path for uncalibrated images, exit
+        if not os.path.exists(self.uncalibrated_path):
+            print('\tNo images found in %s' % self.uncalibrated_path)
+            sleep(1)
+            print('\tSkipping...')
+            sleep(1.5)
+            print("\033c")
+            writeError('     in Initialize: Path %s does not exist, skipping pipeline run for this day' % self.uncalibrated_path)
+            return False
+
+        # if no path for calibrated images, make one
+        if not os.path.exists(self.calibrated_path):
+            os.makedirs(self.calibrated_path)
+
+        # get list of files 
+        self.list_of_files = [f.strip() for f in os.listdir(self.uncalibrated_path) if  not f.startswith('.') and os.path.isfile(os.path.join(self.uncalibrated_path,f)) and f.endswith('.fits') or f.endswith('.fit')]
+
+        print('\tSearching %s for sky images...' % self.uncalibrated_path)
+        sleep(1)
+        print('\tSearching %s for calibration files...' % self.path_to_masters)
+        sleep(1)
+        print('\033c')
+        return True
+
+
+    #####################################################################################################################################################
+    ### perform data reduction 
+    #####################################################################################################################################################
 
     def Reduce(self,inPipeline=False):
-        self.isCalibrated = False
+        '''
+        Perform data reduction on the images with filenames generated in Initialize()
+        Takes optional argument inPipeline to facilitate running the function on images outside of the pipeline structure.
+        '''
+        self.isCalibrated = False # reset this variable for new images
+
         if inPipeline:
             header('Calibration & Source Extraction',count=(self.counter,len(self.list_of_files)))
         
         light_h,light = self.hdr,self.img # bring up the hdr and image
         prnt(self.filename,'Successfully opened %s image in %s' % (light_h['FILTER'],self.uncalibrated_path),filename=True)
         self.path_to_masters = 'MasterCal/binning%s/' % str(light_h['XBINNING']) # search for calibration files in binning-specific folder
-     
+
+        # get filter and store variable whether it is narrow band, since we don't want to do source detection later if it isnt
         filt = light_h['FILTER']
         if filt=='V' or filt=='R' or filt=='B':
             self.narrowBand = True
         else:
             self.narrowBand = False
 
-        # open bias frame
+
+        #####################################################################################################################################################
+        ### open the bias master
+
         bias_filename = self.path_to_masters+'bias_master.fit'
         try: 
             bias_fits = fits.open(bias_filename) 
-            prnt(self.filename,'Successfully opened bias master %s' % self.path_to_masters+'bias_master.fit')
+            prnt(self.filename,'Successfully opened bias master %s' % bias_filename)
         except: # if you encounter error
-            prnt(self.filename,'Failed to open bias master %s' % self.path_to_masters+'bias_master.fit')
+            prnt(self.filename,'Failed to open bias master %s' % bias_filename)
             sleep(2)
-            self.writeError('     in Reduce: Missing bias master in %s. Data reduction halted' % self.path_to_masters)
+            self.writeError('     in Reduce: Missing bias master %s. Data reduction halted' % bias_filename)
             return # exit the program since you can't calibrate files without a bias frame
 
         bias_h = bias_fits[0].header # split into header and data
         bias = bias_fits[0].data
 
-        # open dark frame
+
+        #####################################################################################################################################################
+        ### open the dark master
+
         dark_filename = self.path_to_masters+'dark_master.fit'
         try:
             dark_fits = fits.open(dark_filename) 
-            prnt(self.filename,'Successfully opened dark master %s' % self.path_to_masters+'dark_master.fit')
+            prnt(self.filename,'Successfully opened dark master %s' % dark_filename)
         except:
-            prnt(self.filename,'Failed to open dark master %s' % self.path_to_masters+'dark_master.fit')
+            prnt(self.filename,'Failed to open dark master %s' % dark_filename)
             sleep(2)
-            self.writeError('     in Reduce: Missing dark master in %s. Data reduction halted' % self.path_to_masters)
+            self.writeError('     in Reduce: Missing dark master %s. Data reduction halted' % dark_filename)
             return
 
         dark_h = dark_fits[0].header
@@ -635,13 +782,15 @@ class Field:
         dxptime = dark_h['EXPTIME'] # store the exposure time for the dark master for scaling purposes
         exptime = light_h['EXPTIME'] # store light image exposure time
 
-        # open filter-specific flat field
+        #####################################################################################################################################################
+        ### open filter-specific flat field
+
         flat_filename = self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit'
         try: 
             flat_fits = fits.open(flat_filename) 
-            prnt(self.filename,'Successfully opened '+self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
+            prnt(self.filename,'Successfully opened '+flat_filename)
         except:
-            prnt(self.filename,'Failed to open flat master %s' % self.path_to_masters+'flat_master_'+light_h['FILTER']+'.fit')
+            prnt(self.filename,'Failed to open flat master %s' % flat_filename)
             sleep(2)
             self.writeError('     in Reduce: Missing %s flat master in %s. Data reduction halted' % (light_h['FILTER'],self.path_to_masters))
             return
@@ -650,8 +799,11 @@ class Field:
         flat = flat_fits[0].data
 
 
-        # perform the actual data reduction
-        if self.checkCalibration(light_h,light)==True: # if we need to calibrated
+        #####################################################################################################################################################
+        ### perform the actual data reduction
+
+        # if we need to calibrate the image
+        if self.checkCalibration(light_h,light)==True: 
             prnt(self.filename,'Calibrating image...' )
 
             bias_corrected_image = light - bias # subtract the bias
@@ -661,34 +813,42 @@ class Field:
             self.writeToHeader(light_h,flat=flat_filename,bias=bias_filename,dark=dark_filename)
             self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
-
-        elif self.checkCalibration(light_h,light)=='OnlyDark': # if we only had an auto dark
+        # if we only had an auto dark
+        elif self.checkCalibration(light_h,light)=='OnlyDark': 
             prnt(self.filename,'Calibrating image...' )
             
             bias_corrected_image = light - bias
-            final_image = bias_corrected_image / flat # divide by the flat field
+            final_image = bias_corrected_image / flat 
 
             self.writeToHeader(light_h,bias=bias_filename,flat=flat_filename)
             self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
-
-        elif self.checkCalibration(light_h,light)=='Redundant': # if it was already calibrated
+        # if it was already calibrated
+        elif self.checkCalibration(light_h,light)=='Redundant': 
             self.writeError('     in Reduce: Attempted redundant calibration')
             prnt(self.filename,'Image already calibrated')
             self.saveFits(light_h, light,self.filename,inPipeline=inPipeline) # still save the file because we can still use it
 
-        elif self.checkCalibration(light_h,light)=='Temp': # if its temp is wrong
+        # if its temperature is too high
+        elif self.checkCalibration(light_h,light)=='Temp': 
             self.writeError('     in Reduce: Rejected calibration, taken at %s degrees C' % light_h['CCD-TEMP'])
             prnt(self.filename,'Image taken at > '+str(self.max_temp)+' degrees C')
             sleep(4)
-
+        
+        # if the size is incorrect, either because we used a subframe or because we were binning at something either than 1x1, 2x2, or 3x3
         elif self.checkCalibration(light_h,light)=='Size':
             self.writeError('     in Reduce: Rejected calibration, captured with subframe or non-standard binning')
             prnt(self.filename,'Rejected calibration, captured with subframe or non-standard binning')
             sleep(4)
         
+        # close the images
         del self.hdr,self.img
         del flat_fits,bias_fits,dark_fits
+
+
+    #####################################################################################################################################################
+    ### detect sources
+    #####################################################################################################################################################
 
     def Source(self):
         hdr,img = self.hdr,self.img
@@ -1003,5 +1163,3 @@ class Field:
         else:
             self.output = self.Photometry()
             self.writeData()
-
-
