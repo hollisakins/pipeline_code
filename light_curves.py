@@ -7,6 +7,7 @@ from datetime import datetime,timedelta
 from time import sleep
 import matplotlib
 matplotlib.use('TkAgg')
+matplotlib.rcParams["font.family"] = "monospace"
 import matplotlib.pyplot as plt
 import sys
 import os
@@ -291,10 +292,10 @@ while True:
 
         print("\t(if you're connecting remotely it may take a bit to display the plot...)")
 
-        plt.figure(figsize=(10,8))
+        plt.figure(figsize=(10,7),dpi=150)
         label = str(filt+' mag')
         # data
-        plt.errorbar(time, mags, yerr=error,label=label,fmt='kx',ms=6,mew=0.5,elinewidth=0.5,capsize=1,capthick=0.5)
+        plt.errorbar(time, mags, yerr=error,label=label,fmt='kx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
         # comparison
         if not comparisonid=='':
             comparisonid = possible_comparison_ids[int(comparisonid)-1]
@@ -320,7 +321,7 @@ while True:
                 header()
                 sleep(0.5)
                 continue
-        plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='Comparison star %s %s mag' % (comparisonid,filt),fmt='mx',ms=6,mew=0.5,elinewidth=0.5,capsize=1,capthick=0.5)
+        plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='Comparison star %s %s mag' % (comparisonid,filt),fmt='mx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
         duration = end - start
         date_list = [start + timedelta(seconds=x) for x in range(0, int(duration.total_seconds()))]
         cmag = np.mean([float(sources['CMAG_'+filt][c]) for c in indices])
@@ -423,7 +424,7 @@ while True:
         saveflag = raw_input("\tSave plot as file? [y/n]: ")
         if saveflag=='y':
             savename = raw_input("\tEnter custom filename (omit extension) or press enter to auto-generate filename: ")
-        plt.figure(figsize=(10,8))
+        plt.figure(figsize=(10,7),dpi=150)
         plt.scatter(time[0], mags[0], c='r', marker='.', label='R mag')
         plt.scatter(time[1], mags[1], c='g', marker='.', label='V mag')
         plt.scatter(time[2], mags[2], c='b', marker='.', label='B mag')
