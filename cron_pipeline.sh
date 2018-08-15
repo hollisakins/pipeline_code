@@ -1,9 +1,10 @@
 #!/bin/bash
+
 cmd="cd /data1"
 echo $cmd
 eval $cmd
 
-cmd = "ls"
+cmd = "ls" 
 echo $cmd
 eval $cmd
 
