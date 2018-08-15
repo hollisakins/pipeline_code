@@ -1114,7 +1114,7 @@ class Field:
         mags = imags+zero_point # update instrumental magnitudes
         mags_err = np.sqrt(imags_err*imags_err+zero_point_err*zero_point_err) # add in quadrature the aperture photometry error and the zero point error
 
-        prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(mags),np.mean([x for x in mags if not math.isnan(x)])))
+        prnt(self.filename,'Completed offset calculation, mean mag for %s stars in field %s' % (len(mags),np.mean(mags)))
         
         # write calibrated mags to output dict
         output['MAG_err'] = mags_err 

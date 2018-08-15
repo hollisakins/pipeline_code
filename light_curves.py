@@ -294,7 +294,7 @@ while True:
         plt.figure(figsize=(10,8))
         label = str(filt+' mag')
         # data
-        plt.errorbar(time, mags, c='k', label=label,yerr=error,fmt='.')
+        plt.errorbar(time, mags, yerr=error,label=label,fmt='kx',ms=6,mew=0.5,elinewidth=0.5,capsize=1,capthick=0.5)
         # comparison
         if not comparisonid=='':
             comparisonid = possible_comparison_ids[int(comparisonid)-1]
@@ -320,7 +320,7 @@ while True:
                 header()
                 sleep(0.5)
                 continue
-        plt.errorbar(time_comparison,mags_comparison,c='m',label='Comparison star %s %s mag' % (comparisonid,filt),yerr = error_comparison,fmt='.')
+        plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='Comparison star %s %s mag' % (comparisonid,filt),fmt='mx',ms=6,mew=0.5,elinewidth=0.5,capsize=1,capthick=0.5)
         duration = end - start
         date_list = [start + timedelta(seconds=x) for x in range(0, int(duration.total_seconds()))]
         cmag = np.mean([float(sources['CMAG_'+filt][c]) for c in indices])
