@@ -8,6 +8,7 @@ from time import sleep
 import matplotlib
 matplotlib.use('TkAgg')
 matplotlib.rcParams["font.family"] = "monospace"
+matplotlib.rcParams["axes.linewidth"] = 0.3
 import matplotlib.pyplot as plt
 import sys
 import os
@@ -292,10 +293,11 @@ while True:
 
         print("\t(if you're connecting remotely it may take a bit to display the plot...)")
 
-        plt.figure(figsize=(10,7),dpi=150)
-        label = str(filt+' mag')
+        plt.figure(figsize=(10,7))
+        plt.grid(linewidth=0.2,linestyle='dashed')
+        
         # data
-        plt.errorbar(time, mags, yerr=error,label=label,fmt='kx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
+        plt.errorbar(time, mags, yerr=error,label='target star',fmt='kx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
         # comparison
         if not comparisonid=='':
             comparisonid = possible_comparison_ids[int(comparisonid)-1]
@@ -321,12 +323,13 @@ while True:
                 header()
                 sleep(0.5)
                 continue
-        plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='Comparison star %s %s mag' % (comparisonid,filt),fmt='mx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
+        plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='comparison %s' % comparisonid,fmt='mx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
         duration = end - start
         date_list = [start + timedelta(seconds=x) for x in range(0, int(duration.total_seconds()))]
         cmag = np.mean([float(sources['CMAG_'+filt][c]) for c in indices])
         cmags = [cmag for r in range(len(date_list))]
-        plt.plot(date_list,cmags,linestyle='dashdot',color='black',label='Catalog '+filt+' mag')
+        
+        plt.plot(date_list,cmags,linestyle='dashdot',color='black',label='cataog mag')
 
         plt.legend()
 
@@ -337,7 +340,7 @@ while True:
         plt.ylim(mean-25*std,mean+25*std)
         plt.gca().invert_yaxis()
         plt.xlabel('Time')
-        plt.ylabel('Magnitude')
+        plt.ylabel(str(filt+' mag'))
         plt.xticks(rotation=50)
         plt.margins(0.2)
         plt.subplots_adjust(bottom=0.15)
@@ -424,7 +427,7 @@ while True:
         saveflag = raw_input("\tSave plot as file? [y/n]: ")
         if saveflag=='y':
             savename = raw_input("\tEnter custom filename (omit extension) or press enter to auto-generate filename: ")
-        plt.figure(figsize=(10,7),dpi=150)
+        plt.figure(figsize=(10,7))
         plt.scatter(time[0], mags[0], c='r', marker='.', label='R mag')
         plt.scatter(time[1], mags[1], c='g', marker='.', label='V mag')
         plt.scatter(time[2], mags[2], c='b', marker='.', label='B mag')
