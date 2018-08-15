@@ -276,7 +276,7 @@ while True:
         possible_comparison_ids = []
         imgname_comparison = [sources['IMGNAME'][x] for x in indices][0]
         for j in range(len(sources['id'])):
-            if not sources['MAG_'+filt][j]=='---' and abs(float(sources['MAG_'+filt][j])-mag)<1 and abs(float(sources['RA_M'][j])-RA_comparison)<0.2 and abs(float(sources['DEC_M'][j])-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
+            if not sources['MAG_'+filt][j]=='---' and abs(float(sources['MAG_'+filt][j])-mag)<2 and abs(float(sources['RA_M'][j])-RA_comparison)<0.2 and abs(float(sources['DEC_M'][j])-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
                 possible_comparison_ids.append(sources['id'][j])
         possible_comparison_ids = np.unique(possible_comparison_ids)
         for j in range(len(possible_comparison_ids)):
