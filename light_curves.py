@@ -323,7 +323,7 @@ while True:
                 header()
                 sleep(0.5)
                 continue
-        plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='comparison %s' % comparisonid,fmt='mx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
+            plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='comparison %s' % comparisonid,fmt='mx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
         duration = end - start
         date_list = [start + timedelta(seconds=x) for x in range(0, int(duration.total_seconds()))]
         cmag = np.mean([float(sources['CMAG_'+filt][c]) for c in indices])
