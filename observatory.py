@@ -52,9 +52,11 @@ from email import encoders
 #####################################################################################################################################################
 
 # defines variable for the the width of the console to print output more clearly 
-rows, columns = os.popen('stty size', 'r').read().split()
-termsize = int(columns)
-
+if sys.stdout.isatty():
+    rows, columns = os.popen('stty size', 'r').read().split()
+    termsize = int(columns)
+else:
+    termsize = 0
 
 # astropy gives warning for a depricated date format in TheSkyX fits header, we dont need to see that so these two lines supress all warnings
 # comment them out when testing
@@ -258,7 +260,6 @@ def prnt(indent,strng,filename=False,alert=False):
     Prints the ouput of the pipeline in a consistent way, using the length of the indent variable as the indent for the line and printing the strng variable. 
     If filename = True, it will print the filename as the indent. If alert = True it will put exclamation points in the line. 
     '''
-
     if alert:
         if slow:
             if not filename:
@@ -293,7 +294,8 @@ def header(i,count=False):
     Prints a header at the top of the screen that shows what process is going on
     Takes a count argument to show a counter of images processed and how many total
     '''
-
+    if not sys.stdout.isatty():
+        return
     print('\033c')
     if not count:
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
