@@ -277,9 +277,17 @@ while True:
         DEC_comparison = np.mean([sources['DEC_M'][x] for x in indices])
         possible_comparison_ids = []
         imgname_comparison = [sources['IMGNAME'][x] for x in indices][0]
+        
         for j in range(len(sources['id'])):
-            if not sources['MAG_'+filt][j]=='---' and abs(float(sources['MAG_'+filt][j])-mag)<2 and abs(float(sources['RA_M'][j])-RA_comparison)<0.2 and abs(float(sources['DEC_M'][j])-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
-                possible_comparison_ids.append(sources['id'][j])
+            if abs(float(sources['MAG_'+filt][j])-mag)<2:
+                if not sources['MAG_'+filt][j]=='---' and abs(float(sources['RA_M'][j])-RA_comparison)<0.2 and abs(float(sources['DEC_M'][j])-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
+                    possible_comparison_ids.append(sources['id'][j])
+        if possible_comparison_ids==[]:
+            for j in range(len(sources['id'])):
+                if abs(float(sources['MAG_'+filt][j]-mag)<6):
+                    if not sources['MAG_'+filt][j]=='---' and abs(float(sources['RA_M'][j])-RA_comparison)<0.2 and abs(float(sources['DEC_M'][j])-DEC_comparison)<0.2 and not str(sources['id'][j]).strip()=='nan' and sources['IMGNAME'][j]==imgname_comparison:
+                        possible_comparison_ids.append(sources['id'][j])
+        
         possible_comparison_ids = np.unique(possible_comparison_ids)
         for j in range(len(possible_comparison_ids)):
             possible_indices = np.nonzero(sources['id']==possible_comparison_ids[j])[0]
@@ -290,7 +298,7 @@ while True:
         saveflag = raw_input("\tSave plot as file? (will also save summary statistics to .txt file [y/n]: ")
         if saveflag=='y':
             savename = raw_input("\tEnter custom filename (omit extension) or press enter to auto-generate filename: ")
-
+        title = raw_input("\tEnter custom plot tile or press enter to auto-generate title: ")
         print("\t(if you're connecting remotely it may take a bit to display the plot...)")
 
         plt.figure(figsize=(10,7))
@@ -324,6 +332,7 @@ while True:
                 sleep(0.5)
                 continue
             plt.errorbar(time_comparison,mags_comparison,yerr=error_comparison,label='comparison %s' % comparisonid,fmt='mx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
+        
         duration = end - start
         date_list = [start + timedelta(seconds=x) for x in range(0, int(duration.total_seconds()))]
         cmag = np.mean([float(sources['CMAG_'+filt][c]) for c in indices])
@@ -348,14 +357,20 @@ while True:
        
 
         if choice=='2':
-            plt.title('Star at %s, %s' % (RA,DEC))
+            if title=='':
+                plt.title('Star at %s, %s' % (RA,DEC))
+            else:
+                plt.title(title)
             if saveflag=='y':
                 if savename=='':
                     filename = 'star_%s_%s_%s.png' % (RA,DEC,filt)
                 else:
                     filename = savename+'.png'
         else: 
-            plt.title('UCAC4 %s' % choice)
+            if title=='':
+                plt.title('UCAC4 %s' % choice)
+            else: 
+                plt.title(title)
             if saveflag=='y':
                 if savename=='':
                     filename = 'star_%s_%s.png' % (choice,filt)
@@ -363,7 +378,7 @@ while True:
                     filename = savename+'.png'
         if saveflag=='y':
             plt.savefig('plots/'+filename)
-            with open('plots/'+filename.replace('.png','.txt'),'w') as t:
+            with open('plots/'+filename.replace('.png','_stats.txt'),'w') as t:
                 t.write('mean: '+str(np.mean(mags))+'\n')
                 t.write('std: '+str(np.std(mags))+'\n')
                 t.write('N: '+str(len(mags))+'\n')
@@ -377,6 +392,9 @@ while True:
                 t.write('IQR: '+ str(iqr)+'\n')
                 t.write('Start Date/Time: '+str(start)+' UTC\n')
                 t.write('End Date/Time: '+str(end)+' UTC')
+            with open('plots/'+filename.replace('.png','_data.txt'),'w') as d:
+                for j in range(len(time)):
+                    d.write("%s %s\n" % (time[j],mags[j]))
 
         plt.show()
 
