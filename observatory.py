@@ -56,7 +56,7 @@ if sys.stdout.isatty():
     rows, columns = os.popen('stty size', 'r').read().split()
     termsize = int(columns)
 else:
-    termsize = 0
+    termsize = 100
 
 # astropy gives warning for a depricated date format in TheSkyX fits header, we dont need to see that so these two lines supress all warnings
 # comment them out when testing
@@ -294,8 +294,6 @@ def header(i,count=False):
     Prints a header at the top of the screen that shows what process is going on
     Takes a count argument to show a counter of images processed and how many total
     '''
-    if not sys.stdout.isatty():
-        return
     print('\033c')
     if not count:
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
