@@ -33,11 +33,10 @@ data = []
 
 filt = raw_input('\tFor which filter would you like to plot the data? [R/V/B]: ')
 for filename in filenames:
-    indices = np.nonzero(sources['IMGNAME']==filename)
+    indices = np.nonzero(sources['IMGNAME']==filename)[0]
 
     identifiers = [sources['id'][x] for x in indices]
     identifiers = np.unique(identifiers)
-    print(identifiers)
     for starid in identifiers:
         current_mags = [sources['MAG_'+filt][j] for j in indices if sources['id'][j]==starid]
         stds.append(np.std(current_mags))
