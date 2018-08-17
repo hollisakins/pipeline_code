@@ -37,7 +37,6 @@ for filename in filenames:
     i = np.nonzero(sources['IMGNAME']==filename)
     indices.append(i) 
 
-indices = np.unique(indices)
 
 for starid in list(set([sources['id'][x] for x in indices])):
     current_mags = [sources['MAG_'+filt][j] for j in indices if sources['id'][j]==starid]
