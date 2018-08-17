@@ -32,18 +32,16 @@ data = []
 
 
 filt = raw_input('\tFor which filter would you like to plot the data? [R/V/B]: ')
-indices = []
 for filename in filenames:
-    i = np.nonzero(sources['IMGNAME']==filename)
-    indices.append(i) 
+    indices = np.nonzero(sources['IMGNAME']==filename)
 
-print(indices)
+    print(indices)
 
-for starid in list(set([sources['id'][x] for x in indices])):
-    current_mags = [sources['MAG_'+filt][j] for j in indices if sources['id'][j]==starid]
-    stds.append(np.std(current_mags))
-    mags.append(np.mean(current_mags))
-    data.append(len(current_mags))
+    for starid in list(set([sources['id'][x] for x in indices])):
+        current_mags = [sources['MAG_'+filt][j] for j in indices if sources['id'][j]==starid]
+        stds.append(np.std(current_mags))
+        mags.append(np.mean(current_mags))
+        data.append(len(current_mags))
 
 
 saveflag = raw_input("\tWould you like to save this plot? [y/n]: ")
