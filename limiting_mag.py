@@ -23,7 +23,8 @@ sources = openData('sources.csv')
 path = raw_input("\tPath to files including filename w/ * syntax: ")
 filenames = glob.glob(path)
 for i in range(len(filenames)):
-    filenames[i] = os.path.basename(filenames[i])
+    if not filenames[i].endswith('.SRC'):
+        filenames[i] = os.path.basename(filenames[i])
 print(filenames)
 mags = []
 stds = []
