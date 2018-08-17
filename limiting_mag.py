@@ -36,8 +36,9 @@ for filename in filenames:
     indices = np.nonzero(sources['IMGNAME']==filename)
 
     print(indices)
-
-    for starid in list(set([sources['id'][x] for x in indices])):
+    identifiers = [sources['id'][x] for x in indices]
+    identifiers = np.unique(identifiers)
+    for starid in identifiers:
         current_mags = [sources['MAG_'+filt][j] for j in indices if sources['id'][j]==starid]
         stds.append(np.std(current_mags))
         mags.append(np.mean(current_mags))
