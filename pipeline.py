@@ -20,7 +20,7 @@ try:
     obs.dailyCopy(writeOver=False) 
     # change writeOver to True if you want to overwrite files on the Linux box with updates ones on the Dome computer
 
-    obs.makeMasters(inPipeline=True,writeOver=True) 
+    obs.makeMasters(inPipeline=True,writeOver=False) 
     # change writeOver to True if you want to overwrite the old masters with new ones (only do this if you know yours
     # are better than the ones we already have or if the old ones are outdated)
 
