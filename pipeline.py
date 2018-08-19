@@ -20,7 +20,7 @@ try:
     obs.dailyCopy(writeOver=False) 
     # change writeOver to True if you want to overwrite files on the Linux box with updates ones on the Dome computer
 
-    obs.makeMasters(inPipeline=True,writeOver=False) 
+    obs.makeMasters(inPipeline=True,writeOver=True) 
     # change writeOver to True if you want to overwrite the old masters with new ones (only do this if you know yours
     # are better than the ones we already have or if the old ones are outdated)
 
@@ -28,7 +28,7 @@ try:
 
     f.path_to_masters = 'MasterCal/'
     f.uncalibrated_path = 'ArchSky/'
-    f.calibrated_path = 'Calibrated Images/'
+    f.calibrated_path = 'ReducedImages/'
     f.aperture_size = 30 #(default 30)
     # f.cutoff = False #(default True)
     # f.max_temp = -2.0 #(default -3.0)

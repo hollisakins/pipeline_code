@@ -522,7 +522,7 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                     exec('dark'+i+'_master=np.median(np.array(master)-bias'+i+'_master,axis=0)') # define the dark amster as the median of each frame with the bias already removed
                     print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
                 except NameError: # you get a NameError if it cannot find the bias master variable
-                    print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to DR_errorlog.txt' % (i,i)) # can't make the master dark without a bias
+                    print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to errorlog.txt' % (i,i)) # can't make the master dark without a bias
                     writeError('     in makeMasters: No bias master for binning %sx%s, failed to create dark' % (i,i))
 
         for j in binnings: 
@@ -547,10 +547,19 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
 
         #####################################################################################################################################################
         ### write the masters to fits files
-
         for i in binnings:
             for j in ['bias','dark']: 
                 if j+i+'_master' in locals(): # if the local variable is defined
+                    if writeOver:
+                        # move current masters to old folder
+                        with fits.open('MasterCal/binning'+i+'/'+j+'_master.fit') as old_hdulist:
+                            old_hdr = old_hdulist[0].header
+                            date = old_hdr['DATE-OBS'] # date image was taken
+                        date = date[0:4] + date[5:7] + date[8:10]
+                        archivepath = 'MasterCal/archive/'+date+'/binning'+i+'/'
+                        if not os.path.exists(archivepath):
+                            os.makedirs(archivepath)
+                        shutil.move('MasterCal/binning'+i+'/'+j+'_master.fit',archivepath+j+'_master.fit')
                     try:
                         code = "fits.writeto('MasterCal/binning"+i+'/'+j+"_master.fit',"+j+i+'_master, header='+j+i+'_header,overwrite='+str(writeOver)+')' # write to MasterCal/binningi
                         exec(code)
@@ -561,6 +570,16 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
         for i in binnings:
             exec('f=np.unique(filters'+i+')') 
             for j in f: # for each unique filter
+                if writeOver:
+                    # move current masters to old folder
+                    with fits.open('MasterCal/binning'+i+'/flat_master_'+j+'.fit')[0] as old_hdulist:
+                        old_hdr = old_hdulist[0].header
+                        date = old_hdr['DATE-OBS'] # date image was taken
+                    date = date[0:4] + date[5:7] + date[8:10]
+                    archivepath = 'MasterCal/archive/'+date+'/binning'+i+'/'
+                    if not os.path.exists(archivepath):
+                        os.makedirs(archivepath)
+                    shutil.move('MasterCal/binning'+i+'/flat_master_'+j+'.fit',archivepath+'flat_master_'+j+'.fit')
                 try:
                     code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite="+str(writeOver)+")"
                     exec(code)   
@@ -583,7 +602,7 @@ class Field:
     def __init__(self):
         # when a Field object is created, define some variables
         # these variables can be changed from pipeline.py after defining the field object
-        self.calibrated_path = 'Calibrated Images/' # path where calibrated images are saved
+        self.calibrated_path = 'ReducedImages/' # path where calibrated images are saved
         self.uncalibrated_path = 'ArchSky/' # path where uncalibrated images are found
         self.path_to_masters = 'MasterCal/' # path where masters are found
         self.max_temp = -3.0 # maximum temp for calibration
@@ -607,7 +626,7 @@ class Field:
                 img = hdulist[0].data
                 self.img = np.array(img,dtype='<f4') # change dtype because of SourceExtractor (sep) 
         else: # otherwise we need the calibrated path
-            with fits.open(self.calibrated_path+self.filename.replace('.fits','_calibrated.fits')) as hdulist:
+            with fits.open(self.calibrated_path+self.filename.replace('.fits','_c.fits')) as hdulist:
                 self.hdr = hdulist[0].header
                 img = hdulist[0].data
                 self.img = np.array(img,dtype='<f4')
@@ -623,7 +642,7 @@ class Field:
                 os.makedirs(self.calibrated_path) # make a directory if there isnt one
         else:
             self.calibrated_path = ''
-        fits.writeto(self.calibrated_path+filename.replace(".fit","_calibrated.fit"),data,h,overwrite=True)
+        fits.writeto(self.calibrated_path+filename.replace(".fit","_c.fit"),data,h,overwrite=True)
         prnt(self.filename,'Wrote file to '+self.calibrated_path)
         print(' ')
         self.isCalibrated = True # now its calibrated so we change this variable to True
@@ -667,17 +686,17 @@ class Field:
     ### write calibration to the header
     #####################################################################################################################################################
 
-    def writeToHeader(self,h,dark=False,flat=False,bias=False):
+    def writeToHeader(self,h,dark=False,flat=False,bias=False,darkdate=str(),flatdate=str(),biasdate=str()):
         if h.get('CALSTAT',default=0)==0: # if there is no calstat field in the header
             h.append(('CALSTAT','BDF','Status of Calibration')) # add one
         else:
             h['CALSTAT']='BDF' # otherwise set the value of calstat to BDF
         
-        for x in [dark,flat,bias]:
+        for x,date in zip([dark,flat,bias],[darkdate,flatdate,biasdate]):
             if not x:
                 pass
             else:
-                h.append(('HISTORY','GC data pipeline correction with %s' % x,strftime("%Y-%m-%d %H:%M GMT", gmtime())))
+                h.append(('HISTORY','GC data pipeline correction with %s captured %s' % (x,date), str(strftime("%Y-%m-%d %H:%M GMT", gmtime()))))
 
 
     #####################################################################################################################################################
@@ -687,35 +706,37 @@ class Field:
     def Initialize(self,day):
         '''Index the files we need to calibrate -- must be run before other methods such as Reduce(), Extract(), etc.'''
 
-        self.calibrated_path = 'Calibrated Images/'
-        self.uncalibrated_path = 'ArchSky/'
+        calibrated_path = self.calibrated_path 
+        uncalibrated_path = self.uncalibrated_path 
 
         header('Initialization') # print the header
         self.columnsWritten = True # if we need to write the columns into the sources.csv file
         
         # index dates according to days old
         dates = [datetime.strftime(datetime.utcnow()-timedelta(days=j),'%Y%m%d') for j in range(1,days_old+1)]
-        self.uncalibrated_path = [self.uncalibrated_path+date+'/' for date in dates][day]
-        self.calibrated_path = [self.calibrated_path+date+'/' for date in dates][day]
+        uncalibrated_path = [uncalibrated_path+date+'/' for date in dates][day]
+        calibrated_path = [calibrated_path+date+'/' for date in dates][day]
 
         # if no path for uncalibrated images, exit
-        if not os.path.exists(self.uncalibrated_path):
-            print('\tNo images found in %s' % self.uncalibrated_path)
+        if not os.path.exists(uncalibrated_path):
+            print('\tNo images found in %s' % uncalibrated_path)
             sleep(1)
             print('\tSkipping...')
             sleep(1.5)
             print("\033c")
-            writeError('     in Initialize: Path %s does not exist, skipping pipeline run for this day' % self.uncalibrated_path)
+            writeError('     in Initialize: Path %s does not exist, skipping pipeline run for this day' % uncalibrated_path)
             return False
 
         # if no path for calibrated images, make one
-        if not os.path.exists(self.calibrated_path):
-            os.makedirs(self.calibrated_path)
+        if not os.path.exists(calibrated_path):
+            os.makedirs(calibrated_path)
 
         # get list of files 
-        self.list_of_files = [f.strip() for f in os.listdir(self.uncalibrated_path) if  not f.startswith('.') and os.path.isfile(os.path.join(self.uncalibrated_path,f)) and f.endswith('.fits') or f.endswith('.fit')]
+        self.list_of_files = [f.strip() for f in os.listdir(uncalibrated_path) if  not f.startswith('.') and os.path.isfile(os.path.join(uncalibrated_path,f)) and f.endswith('.fits') or f.endswith('.fit')]
 
-        print('\tSearching %s for sky images...' % self.uncalibrated_path)
+        self.uncalibrated_path = uncalibrated_path
+        self.calibrated_path = calibrated_path
+        print('\tSearching %s for sky images...' % uncalibrated_path)
         sleep(1)
         print('\tSearching %s for calibration files...' % self.path_to_masters)
         sleep(1)
@@ -764,6 +785,8 @@ class Field:
 
         bias_h = bias_fits[0].header # split into header and data
         bias = bias_fits[0].data
+        bias_date = bias_h['DATE-OBS']
+        bias_date = bias_date[0:4] + bias_date[5:7] + bias_date[8:10]
 
 
         #####################################################################################################################################################
@@ -781,6 +804,8 @@ class Field:
 
         dark_h = dark_fits[0].header
         dark = dark_fits[0].data
+        dark_date = dark_h['DATE-OBS']
+        dark_date = dark_date[0:4] + dark_date[5:7] + dark_date[8:10]
         
         dxptime = dark_h['EXPTIME'] # store the exposure time for the dark master for scaling purposes
         exptime = light_h['EXPTIME'] # store light image exposure time
@@ -800,6 +825,8 @@ class Field:
         
         flat_h = flat_fits[0].header
         flat = flat_fits[0].data
+        flat_date = flat_h['DATE-OBS']
+        flat_date = flat_date[0:4] + flat_date[5:7] + flat_date[8:10]
 
 
         #####################################################################################################################################################
@@ -813,7 +840,7 @@ class Field:
             dark_corrected_image = bias_corrected_image - (exptime/dxptime) * dark # scale the dark linearly w/ exptime and subtract
             final_image = dark_corrected_image / flat # divide by the flat field (already normalized)
             
-            self.writeToHeader(light_h,flat=flat_filename,bias=bias_filename,dark=dark_filename)
+            self.writeToHeader(light_h,flat=flat_filename,bias=bias_filename,dark=dark_filename,flatdate=flat_date,biasdate=bias_date,darkdate=dark_date)
             self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
         # if we only had an auto dark
@@ -823,7 +850,7 @@ class Field:
             bias_corrected_image = light - bias
             final_image = bias_corrected_image / flat 
 
-            self.writeToHeader(light_h,bias=bias_filename,flat=flat_filename)
+            self.writeToHeader(light_h,bias=bias_filename,flat=flat_filename,biasdate=bias_date,flatdate=flat_date)
             self.saveFits(light_h, final_image,self.filename,inPipeline=inPipeline)
 
         # if it was already calibrated
@@ -1170,7 +1197,7 @@ class Field:
             e.set_facecolor('none')
             e.set_edgecolor('red')
             ax.add_artist(e)
-        name = self.filename.replace('Calibrated Images/','plots/')
+        name = self.filename.replace(self.calibrated_path,'plots/')
         name = name.replace('.fits','.jpg')
         plt.savefig(name)
         print('    Created plot of %s' % self.filename)
