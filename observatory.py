@@ -726,7 +726,6 @@ class Field:
             sleep(1)
             print('Skipping...')
             sleep(1.5)
-            print("\033c")
             writeError('     in Initialize: Path %s does not exist, skipping pipeline run for this day' % uncalibrated_path)
             return False
 
