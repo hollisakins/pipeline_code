@@ -52,11 +52,11 @@ from email import encoders
 #####################################################################################################################################################
 
 # defines variable for the the width of the console to print output more clearly 
-if sys.stdout.isatty():
+if sys.stdout.isatty(): # only if we have a terminal to view it on (cron does not display anywhere)
     rows, columns = os.popen('stty size', 'r').read().split()
     termsize = int(columns)
 else:
-    termsize = 100
+    termsize = 70
 
 # astropy gives warning for a depricated date format in TheSkyX fits header, we dont need to see that so these two lines supress all warnings
 # comment them out when testing
@@ -133,7 +133,7 @@ def sendError(message):
     all_recipients = recipients[0]
     for x in range(1,len(recipients)):
         all_recipients += ', '+recipients[x]
-    print('Sending error message to %s\n' % all_recipients)
+    print('Sending error message to %s' % all_recipients)
     sleep(1)
 
     # for each recipient, change 'To' variable and send message
@@ -198,7 +198,7 @@ def sendStatus():
     """ % (start_time,end_time,images_processed,stars_logged,stars_not_matched)
     
     # same thing but without HTML
-    printing = """Today's Pipeline Run:\n
+    printing = """Today's Pipeline Run:
     Began %s 
     Completed %s
     Unique images processed: %s
@@ -236,7 +236,7 @@ def sendStatus():
     all_recipients = recipients[0]
     for x in range(1,len(recipients)):
         all_recipients += ', '+recipients[x]
-    print('Sending message to %s\n' % all_recipients)
+    print('Sending message to %s' % all_recipients)
     sleep(1)
     print(printing)
     
@@ -263,29 +263,34 @@ def prnt(indent,strng,filename=False,alert=False):
     if alert:
         if slow:
             if not filename:
-                print(' '*(len(indent)-2)+'!!! '+strng)
+                print('!!! '+strng)
                 sleep(0.3)
-            else: 
-                print(indent+': '+strng)
+            else:
+                print(indent)
+                print(strng)
                 sleep(0.3)
         else:
             if not filename:
-                print(' '*(len(indent)-2)+'!!! '+strng)
-            else: 
-                print(indent+': '+strng)
+                print('!!! '+strng)
+            else:
+                print(indent)
+                print(strng)
     else:
         if slow:
             if not filename:
-                print(' '*len(indent+': ')+strng)
+                print(strng)
                 sleep(0.3)
-            else: 
-                print(indent+': '+strng)
+            else:
+                print(indent)
+                print(strng)
                 sleep(0.3)
         else:
             if not filename:
-                print(' '*len(indent+': ')+strng)
-            else: 
-                print(indent+': '+strng)
+                print(strng)
+            else:
+                print(indent)
+                print(strng)
+
 
 
 def header(i,count=False):
@@ -294,11 +299,13 @@ def header(i,count=False):
     Prints a header at the top of the screen that shows what process is going on
     Takes a count argument to show a counter of images processed and how many total
     '''
-    print('\033c')
+    
     if not count:
+        print('')
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
         print('')
     else:
+        print('')
         i = i+' '+str(count[0])+'/'+str(count[1])
         print('-'*int((termsize-len(i)-2)/2)+' '+i+' '+'-'*int((termsize-len(i)-2)/2))
         print('')
@@ -341,7 +348,7 @@ def dailyCopy(writeOver=False):
 
     # copy each directory in a loop (only 2 iterations since only 2 directories)
     for i in range(2):
-        print('\tCopying from %s ' % copys[i])
+        print('Copying from %s ' % copys[i])
         sleep(1.5)
         
         # index the dates and find which match our days_old criteria
@@ -360,11 +367,11 @@ def dailyCopy(writeOver=False):
 
         # if no dates found
         if dates_str.strip()=='':
-            print('\tNo directories in %s matched %s\n' % (copys[i],recent_dates_str))
+            print('No directories in %s matched %s' % (copys[i],recent_dates_str))
             sleep(1) 
             continue # skip to next day in loop
         else:
-            print('\tLooking for dates %s found %s in %s' % (recent_dates_str,dates_str,copys[i]))
+            print('Looking for dates %s found %s in %s' % (recent_dates_str,dates_str,copys[i]))
         
         sleep(2)
         dates_src = [copys[i]+date+'/' for date in dates] # paths for directories to copy
@@ -372,8 +379,7 @@ def dailyCopy(writeOver=False):
 
         # loop through each directory and copy the files
         for j in range(len(dates_src)):
-            print('\tAttempting copy of %s' % dates_src[j])
-            writeError('     in dailyCopy: Attempting copy of %s' % dates_src[j])
+            print('Attempting copy of %s' % dates_src[j])
             sleep(2)
             try:
                 shutil.copytree(dates_src[j],dates_dst[j]) # copy files from source to destination
@@ -382,22 +388,21 @@ def dailyCopy(writeOver=False):
                     if os.path.exists(dates_dst[j]): # then delete the file 
                         shutil.rmtree(dates_dst[j])
                         shutil.copytree(dates_src[j], dates_dst[j]) # and try to copy again
-                    print('\tDirectory %s already exists, overwriting' % dates_dst[j]) 
+                    print('Directory %s already exists, overwriting' % dates_dst[j]) 
                     sleep(3)
                     writeError('     in dailyCopy: Directory %s already exists, overwritten' % dates_dst[j]) 
                 else: # if you dont want to overwrite 
-                    print('\tDirectory %s already exists, skipping' % dates_dst[j]) # skip it
+                    print('Directory %s already exists, skipping' % dates_dst[j]) # skip it
                     sleep(3)
                     writeError('     in dailyCopy: Directory %s already exists, skipped copying' % dates_dst[j])
                     continue # skip to  next day
             else: # if you don't encounter an error
-                print('\tCopied directory %s to %s' % (dates_src[j],dates_dst[j]))
+                print('Copied directory %s to %s' % (dates_src[j],dates_dst[j]))
                 sleep(3)
-                writeError('     in dailyCopy: copied dir %s to %s' % (dates_src[j],dates_dst[j]))
             sleep(2)
-            print('\tComplete')
+            print('Complete')
             sleep(2)
-            print('')
+
 
 
 #####################################################################################################################################################
@@ -427,9 +432,9 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
         # if you cannot find date path, skip day
         if not os.path.exists(path_to_cal):
             sleep(1.5)
-            print('\tNo calibration date folder found %s' % path_to_cal)
+            print('No calibration date folder found %s' % path_to_cal)
             sleep(3)
-            print('\tSkipping makeMasters for this date...')
+            print('Skipping makeMasters for this date...')
             writeError('     in makeMasters: No path found at %s, skipped makeMasters for this date' % path_to_cal)
             sleep(3)
             continue
@@ -440,9 +445,9 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
         # if no files in that date folder, skip the day 
         if len(filenames)==0:
             sleep(1.5)
-            print('\tNo images in %s' % path_to_cal)
+            print('No images in %s' % path_to_cal)
             sleep(3)
-            print('\tSkipping makeMasters for this date')
+            print('Skipping makeMasters for this date')
             sleep(3)
             writeError('     in makeMasters: No images in %s, skipped makeMasters' % path_to_cal)
             continue
@@ -450,15 +455,15 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
         #####################################################################################################################################################
         ### search and sort calibration files
 
-        print('\tSearching %s for calibraton files...' % path_to_cal)
-        print('\tIndexed %s files' % len(filenames))
+        print('Searching %s for calibraton files...' % path_to_cal)
+        print('Indexed %s files' % len(filenames))
         
         # lists are used to store the filename for each calibration file and then combine into a master
         binnings = ['1','2','3','4']
         for j in binnings: # initialize lists
             exec("bias"+j+",dark"+j+",Red"+j+",Green"+j+",Blue"+j+",R"+j+",V"+j+",B"+j+",Halpha"+j+",Lum"+j+",filters"+j+" = [],[],[],[],[],[],[],[],[],[],[]") 
 
-        print('\tSorting files...')
+        print('Sorting files...')
 
         # sort the calibration filenames by type and store them in the lists
         for filename in filenames: # for each filename
@@ -479,19 +484,18 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                     exec(hdr['FILTER']+binn+'.append(filename)') 
 
         # print what was detected
-        print('')
-        print('\tIndexed files:        Binning1x1  Binning2x2  Binning3x3  Binning4x4')
-        print('\t\tBias:             %s          %s          %s          %s' % (len(bias1),len(bias2),len(bias3),len(bias4)))
-        print('\t\tDark:             %s          %s          %s          %s' % (len(dark1),len(dark2),len(dark3),len(dark4)))
-        print('\t\tRed Flat:         %s          %s          %s          %s' % (len(Red1),len(Red2),len(Red3),len(Red4)))
-        print('\t\tGreen Flat:       %s          %s          %s          %s' % (len(Green1),len(Green2),len(Green3),len(Green4)))
-        print('\t\tBlue Flat:        %s          %s          %s          %s' % (len(Blue1),len(Blue2),len(Blue3),len(Blue4)))
-        print('\t\tR Flat:           %s          %s          %s          %s' % (len(R1),len(R2),len(R3),len(R4)))
-        print('\t\tV Flat:           %s          %s          %s          %s' % (len(V1),len(V2),len(V3),len(V4)))
-        print('\t\tB Flat:           %s          %s          %s          %s' % (len(B1),len(B2),len(B3),len(B4)))
-        print('\t\tHalpha Flat:      %s          %s          %s          %s' % (len(Halpha1),len(Halpha2),len(Halpha3),len(Halpha4)))
-        print('\t\tLum Flat:         %s          %s          %s          %s' % (len(Lum1),len(Lum2),len(Lum3),len(Lum4)))
-        print('')
+        print('Indexed files:        Binning1x1  Binning2x2  Binning3x3  Binning4x4')
+        print('Bias:             %s          %s          %s          %s' % (len(bias1),len(bias2),len(bias3),len(bias4)))
+        print('Dark:             %s          %s          %s          %s' % (len(dark1),len(dark2),len(dark3),len(dark4)))
+        print('Red Flat:         %s          %s          %s          %s' % (len(Red1),len(Red2),len(Red3),len(Red4)))
+        print('Green Flat:       %s          %s          %s          %s' % (len(Green1),len(Green2),len(Green3),len(Green4)))
+        print('Blue Flat:        %s          %s          %s          %s' % (len(Blue1),len(Blue2),len(Blue3),len(Blue4)))
+        print('R Flat:           %s          %s          %s          %s' % (len(R1),len(R2),len(R3),len(R4)))
+        print('V Flat:           %s          %s          %s          %s' % (len(V1),len(V2),len(V3),len(V4)))
+        print('B Flat:           %s          %s          %s          %s' % (len(B1),len(B2),len(B3),len(B4)))
+        print('Halpha Flat:      %s          %s          %s          %s' % (len(Halpha1),len(Halpha2),len(Halpha3),len(Halpha4)))
+        print('Lum Flat:         %s          %s          %s          %s' % (len(Lum1),len(Lum2),len(Lum3),len(Lum4)))
+
 
         
         #####################################################################################################################################################
@@ -507,7 +511,7 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                         img = hdulist[0].data
                         master.append(img) # add the image data to the master list
                 exec('bias'+i+'_master=np.median(np.array(master),axis=0)') # define bias master as the median of each fame
-                print('\tConstructed a master bias with binning %sx%s' % (i,i)) 
+                print('Constructed a master bias with binning %sx%s' % (i,i)) 
 
         for i in binnings:
             exec('s=np.size(dark'+i+')') 
@@ -520,9 +524,9 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                             img = hdulist[0].data
                             master.append(img)
                     exec('dark'+i+'_master=np.median(np.array(master)-bias'+i+'_master,axis=0)') # define the dark amster as the median of each frame with the bias already removed
-                    print('\tConstructed a scalable master dark with binning %sx%s' % (i,i))
+                    print('Constructed a scalable master dark with binning %sx%s' % (i,i))
                 except NameError: # you get a NameError if it cannot find the bias master variable
-                    print('\tNo bias master for binning %sx%s, failed to create scalable dark. Wrote to errorlog.txt' % (i,i)) # can't make the master dark without a bias
+                    print('No bias master for binning %sx%s, failed to create scalable dark. Wrote to errorlog.txt' % (i,i)) # can't make the master dark without a bias
                     writeError('     in makeMasters: No bias master for binning %sx%s, failed to create dark' % (i,i))
 
         for j in binnings: 
@@ -542,7 +546,7 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                     exec("master = master - bias"+j+"_master") # subtract the bias from each flat frame
                     exec("master = master - dark"+j+"_master * fxptime / dxptime") # subtract the dark from each flat frame
                     exec(i+j+"_master = np.median(master,axis=0)/np.max(np.median(master,axis=0))")  # define the flat field as the median of each frame normalized to the maximum
-                    print('\tConstructed master %s flat with binning %sx%s' % (i,j,j))
+                    print('Constructed master %s flat with binning %sx%s' % (i,j,j))
         
 
         #####################################################################################################################################################
@@ -563,9 +567,9 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                     try:
                         code = "fits.writeto('MasterCal/binning"+i+'/'+j+"_master.fit',"+j+i+'_master, header='+j+i+'_header,overwrite='+str(writeOver)+')' # write to MasterCal/binningi
                         exec(code)
-                        print('\tWrote master %s to file MasterCal/binning%s/%s_master.fit' % (j,i,j))   
+                        print('Wrote master %s to file MasterCal/binning%s/%s_master.fit' % (j,i,j))   
                     except:
-                        print('\tBias or dark master already exists, no new file written')
+                        print('Bias or dark master already exists, no new file written')
 
         for i in binnings:
             exec('f=np.unique(filters'+i+')') 
@@ -583,13 +587,13 @@ def makeMasters(directory=str,inPipeline=False,writeOver=False):
                 try:
                     code = "fits.writeto('MasterCal/binning"+i+'/'+"flat_master_"+j+".fit',"+j+i+"_master,header="+j+i+"_header,overwrite="+str(writeOver)+")"
                     exec(code)   
-                    print('\tWrote master %s flat to file MasterCal/binning%s/flat_master_%s.fit' % (j,i,j))
+                    print('Wrote master %s flat to file MasterCal/binning%s/flat_master_%s.fit' % (j,i,j))
                 except:
-                    print('\t%s Flat master already exists, no new file written' % j)
+                    print('%s Flat master already exists, no new file written' % j)
         
-        print('\n\tComplete')
+        print('Complete')
         sleep(3)
-        print('\033c')
+        
 
 
 
@@ -644,7 +648,6 @@ class Field:
             self.calibrated_path = ''
         fits.writeto(self.calibrated_path+filename.replace(".fit","_c.fit"),data,h,overwrite=True)
         prnt(self.filename,'Wrote file to '+self.calibrated_path)
-        print(' ')
         self.isCalibrated = True # now its calibrated so we change this variable to True
     
 
@@ -719,9 +722,9 @@ class Field:
 
         # if no path for uncalibrated images, exit
         if not os.path.exists(uncalibrated_path):
-            print('\tNo images found in %s' % uncalibrated_path)
+            print('No images found in %s' % uncalibrated_path)
             sleep(1)
-            print('\tSkipping...')
+            print('Skipping...')
             sleep(1.5)
             print("\033c")
             writeError('     in Initialize: Path %s does not exist, skipping pipeline run for this day' % uncalibrated_path)
@@ -736,11 +739,11 @@ class Field:
 
         self.uncalibrated_path = uncalibrated_path
         self.calibrated_path = calibrated_path
-        print('\tSearching %s for sky images...' % uncalibrated_path)
+        print('Searching %s for sky images...' % uncalibrated_path)
         sleep(1)
-        print('\tSearching %s for calibration files...' % self.path_to_masters)
+        print('Searching %s for calibration files...' % self.path_to_masters)
         sleep(1)
-        print('\033c')
+        
         return True
 
 
@@ -1018,7 +1021,7 @@ class Field:
         imags_err= 1/np.array(fluxerrs) # includes Poisson noise
 
         prnt(self.filename, 'Completed aperture photometry, result %s inst. magnitudes' % len(flux))
-        print('')
+
         prnt(self.filename, 'Preparing to match %s objects to catalog...' % len(objects))
 
         # check to make sure we have the same number of objects as we have fluxes
@@ -1055,7 +1058,7 @@ class Field:
             try:
                 result = result[0] # try to get the first result from the list of results (which is usually just 1 element)
             except:
-                prnt(self.filename,'No star match within 3 arcseconds')
+                # prnt(self.filename,'No star match within 3 arcseconds')
                 misfires += 1 
                 # manually fill in the data with mostly nan values 
                 output['id'].append('nan')
@@ -1083,7 +1086,7 @@ class Field:
 
             # write results if not already written
             if i not in output['id']:
-                prnt(self.filename,'Star match in %s, mag %s, residual %s arcsec' % (catalog,mag,dif))
+                # prnt(self.filename,'Star match in %s, mag %s, residual %s arcsec' % (catalog,mag,dif))
                 output['id'].append(i)
                 output['RA_C'].append(ra)
                 output['DEC_C'].append(dec)
@@ -1097,7 +1100,7 @@ class Field:
                 if not math.isnan(mag):
                     objects_indices_matched.append(n)
             else:
-                prnt(self.filename,'Star already matched')
+                # prnt(self.filename,'Star already matched')
                 misfires += 1 
                 # manually fill in the data with mostly nan (not a number) values 
                 output['id'].append('nan')
@@ -1161,7 +1164,6 @@ class Field:
                 output[magtype] = np.full(np.shape(cmags),'---',dtype="S3") # otherwise fill with null values
 
         prnt(self.filename,'Wrote magnitude data to sources.csv') 
-        print(' ')
         sleep(4)
         return output
 
@@ -1211,8 +1213,7 @@ class Field:
                 writer.writerow(self.output.keys())
                 self.columnsWritten = True
             writer.writerows(zip(*self.output.values()))
-        self.writeError('     Wrote %s data points from image' % str(len(self.output['id'])))
-        print('\033c')
+        
    
     def Extract(self):
         self.source = self.Source()
