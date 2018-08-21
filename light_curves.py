@@ -346,7 +346,7 @@ while True:
         
         plt.xlim(start,end)
         mean, std = np.mean(mags), np.std(mags)
-        plt.ylim(mean-25*std,mean+25*std)
+        plt.ylim(mean-10*std,mean+10*std)
         plt.gca().invert_yaxis()
         plt.xlabel('time (UTC)')
         plt.ylabel(str(filt+' mag'))
