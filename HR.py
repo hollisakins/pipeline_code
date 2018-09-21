@@ -4,6 +4,7 @@ import pandas as pd
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
 import glob
 
 def openData(filename):
@@ -54,8 +55,8 @@ Vmags_err = []
 colors_err = []
 
 for starid in unqiue_stars:
-    Vmag = [sources['MAG_V'][i] for i in indices if sources['id'][i]==starid and not sources['MAG_V'][i]=='---' and not sources['MAG_V'][i]=='nan']
-    Bmag = [sources['MAG_B'][i] for i in indices if sources['id'][i]==starid and not sources['MAG_B'][i]=='---' and not sources['MAG_B'][i]=='nan']
+    Vmag = [float(sources['MAG_V'][i]) for i in indices if sources['id'][i]==starid and not sources['MAG_V'][i]=='---' and not sources['MAG_V'][i]=='nan']
+    Bmag = [float(sources['MAG_B'][i]) for i in indices if sources['id'][i]==starid and not sources['MAG_B'][i]=='---' and not sources['MAG_B'][i]=='nan']
     # Bmag = [sources['MAG_B'][i] if not sources['MAG_B'][i]=='---' and not sources['MAG_B'][i]=='nan']
 
     # print(Vmag,Bmag)
