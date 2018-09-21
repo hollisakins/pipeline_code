@@ -43,7 +43,7 @@ for j in range(len(sources['RA_M'])):
     difference[j] = math.sqrt((RA_M-RA)**2+(DEC_M-DEC)**2)
 indices = []
 for j in range(len(difference)):
-    if difference[j]<1/60.:
+    if difference[j]<7/60.:
         indices.append(j)
 
 unqiue_stars = np.unique([sources['id'][i] for i in indices])
