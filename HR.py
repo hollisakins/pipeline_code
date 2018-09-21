@@ -54,8 +54,8 @@ Vmags_err = []
 colors_err = []
 
 for starid in unqiue_stars:
-    Vmag = [sources['MAG_V'][i] for i in indices if sources['id']==starid and not sources['MAG_V'][i]=='---' and not sources['MAG_V'][i]=='nan']
-    Bmag = [sources['MAG_B'][i] for i in indices if sources['id']==starid and not sources['MAG_B'][i]=='---' and not sources['MAG_B'][i]=='nan']
+    Vmag = [sources['MAG_V'][i] for i in indices if sources['id'][i]==starid and not sources['MAG_V'][i]=='---' and not sources['MAG_V'][i]=='nan']
+    Bmag = [sources['MAG_B'][i] for i in indices if sources['id'][i]==starid and not sources['MAG_B'][i]=='---' and not sources['MAG_B'][i]=='nan']
     # Bmag = [sources['MAG_B'][i] if not sources['MAG_B'][i]=='---' and not sources['MAG_B'][i]=='nan']
 
     # print(Vmag,Bmag)
@@ -72,8 +72,15 @@ for starid in unqiue_stars:
     colors.append(mean_Bmag-mean_Vmag)
     colors_err.append(color_err)
 
+matplotlib.use('TkAgg')
+matplotlib.rcParams["font.family"] = "monospace"
+matplotlib.rcParams["axes.linewidth"] = 0.3
+
 plt.figure(figsize=(7,5))
-plt.scatter(colors,Vmags)
+plt.grid(linewidth=0.2,linestyle='dashed')
+plt.errorbar(colors, Vmags, yerr=Vmags_err,xerr=color_err,fmt='kx',ms=5,mew=1.5,elinewidth=0.5,capsize=1,capthick=0.5)
+plt.ticklabel_format(useOffset=False,axis='y')
+plt.gca().invert_yaxis()
 plt.xlabel('color (B-V)')
 plt.ylabel('V magnitude')
 filename = raw_input('Filename for saving the plot (omit ext): ')
