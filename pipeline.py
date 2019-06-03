@@ -49,7 +49,7 @@ except KeyboardInterrupt:
     raise
 except:
     tb = traceback.format_exc()
-    obs.writeError('Fatal Error: details sent in email')
+    obs.writeError(tb)
     obs.sendError(tb)
     raise 
 
